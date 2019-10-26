@@ -80,14 +80,14 @@ namespace Exprtmpl
 				{
 					if (cr)
 					{
-						market = await Readline(template, market, start, index - 2);
+						market = await Readline(file, template, market, start, index - 2);
 						start = index - 1;
 					}
 					cr = true;
 				}
 				else if (c == '\n')
 				{
-					market = await Readline(template, market, start, index - 1);
+					market = await Readline(file, template, market, start, index - 1);
 					start = index;
 					cr = false;
 				}
@@ -95,19 +95,19 @@ namespace Exprtmpl
 				{
 					if (cr)
 					{
-						market = await Readline(template, market, start, index - 2);
+						market = await Readline(file, template, market, start, index - 2);
 						cr = false;
 					}
 				}
 			}
 			if (start < length)
-				market = await Readline(template, market, start, length - 1);
+				market = await Readline(file, template, market, start, length - 1);
 			if (market < length)
-				ParseContent(market, template.Substring(market, length - market));
+				ParseContent(file, market, template.Substring(market, length - market));
 			return flow.EOF();
 		}
 
-		private async Task<int> Readline(string template, int market, int start, int end)
+		private async Task<int> Readline(string file, string template, int market, int start, int end)
 		{
 			for (int i = start; i <= end; i++)
 			{
@@ -119,8 +119,8 @@ namespace Exprtmpl
 					continue;
 				case '#':
 					if (market < start)
-						ParseContent(market, template.Substring(market, start - market));
-					await ParseControl(i + 1, template.Substring(i + 1, end - i));
+						ParseContent(file, market, template.Substring(market, start - market));
+					await ParseControl(file, i + 1, template.Substring(i + 1, end - i));
 					return end + 1;
 				}
 				break;
@@ -128,27 +128,27 @@ namespace Exprtmpl
 			return market;
 		}
 
-		private void ParseContent(int offset, string str)
+		private void ParseContent(string file, int offset, string str)
 		{
 			AntlrInputStream stream = new AntlrInputStream(str);
 			ITokenSource lexer = new ExprtmplLexer(stream);
 			ITokenStream tokens = new CommonTokenStream(lexer);
 			ExprtmplParser parser = new ExprtmplParser(tokens) {BuildParseTree = true, ErrorHandler = new ErrorStrategy(offset)};
 			ExprtmplParser.ContentContext context = parser.content();
-			ContentListener listener = new ContentListener(this, offset, str);
+			ContentListener listener = new ContentListener(this, file, offset, str);
 			ParseTreeWalker.Default.Walk(listener, context);
 			if (listener.Index < str.Length)
 				flow.AddOutput(str.Substring(listener.Index, str.Length - listener.Index));
 		}
 
-		private Task ParseControl(int offset, string str)
+		private Task ParseControl(string file, int offset, string str)
 		{
 			AntlrInputStream stream = new AntlrInputStream(str);
 			ITokenSource lexer = new ExprtmplLexer(stream);
 			ITokenStream tokens = new CommonTokenStream(lexer);
 			ExprtmplParser parser = new ExprtmplParser(tokens) {BuildParseTree = true, ErrorHandler = new ErrorStrategy(offset)};
 			ExprtmplParser.ControlContext context = parser.control();
-			ControlListener listener = new ControlListener(this, offset);
+			ControlListener listener = new ControlListener(this, file, offset);
 			ParseTreeWalker.Default.Walk(listener, context);
 			return listener.Task;
 		}
@@ -156,13 +156,15 @@ namespace Exprtmpl
 		private class ContentListener : ExprtmplBaseListener
 		{
 			private readonly Compiler compiler;
+			private readonly string file;
 			private readonly int offset;
 			private readonly string str;
 			public int Index = 0;
 
-			public ContentListener(Compiler compiler, int offset, string str)
+			public ContentListener(Compiler compiler, string file, int offset, string str)
 			{
 				this.compiler = compiler;
+				this.file = file;
 				this.offset = offset;
 				this.str = str;
 			}
@@ -181,6 +183,7 @@ namespace Exprtmpl
 			private static readonly Task completed;
 			private Task task;
 			private readonly Compiler compiler;
+			private readonly string file;
 			private readonly int offset;
 
 			static ControlListener()
@@ -190,10 +193,11 @@ namespace Exprtmpl
 				builder.SetResult();
 			}
 
-			public ControlListener(Compiler compiler, int offset)
+			public ControlListener(Compiler compiler, string file, int offset)
 			{
 				this.compiler = compiler;
 				this.offset = offset;
+				this.file = file;
 				this.task = completed;
 			}
 
@@ -257,37 +261,37 @@ namespace Exprtmpl
 
 			public override void EnterEnd(ExprtmplParser.EndContext context)
 			{
-				compiler.flow = compiler.flow.End(offset, context);
+				compiler.flow = compiler.flow.End(file, offset, context);
 			}
 
 			public override void EnterForloop1(ExprtmplParser.Forloop1Context context)
 			{
-				compiler.flow = compiler.flow.ForLoop1(offset, context);
+				compiler.flow = compiler.flow.ForLoop1(file, offset, context);
 			}
 
 			public override void EnterForloop2(ExprtmplParser.Forloop2Context context)
 			{
-				compiler.flow = compiler.flow.ForLoop2(offset, context);
+				compiler.flow = compiler.flow.ForLoop2(file, offset, context);
 			}
 
 			public override void EnterForrange(ExprtmplParser.ForrangeContext context)
 			{
-				compiler.flow = compiler.flow.ForRange(offset, context);
+				compiler.flow = compiler.flow.ForRange(file, offset, context);
 			}
 
 			public override void EnterIf(ExprtmplParser.IfContext context)
 			{
-				compiler.flow = compiler.flow.If(offset, context);
+				compiler.flow = compiler.flow.If(file, offset, context);
 			}
 
 			public override void EnterElseif(ExprtmplParser.ElseifContext context)
 			{
-				compiler.flow = compiler.flow.ElseIf(offset, context);
+				compiler.flow = compiler.flow.ElseIf(file, offset, context);
 			}
 
 			public override void EnterElse(ExprtmplParser.ElseContext context)
 			{
-				compiler.flow = compiler.flow.Else(offset, context);
+				compiler.flow = compiler.flow.Else(file, offset, context);
 			}
 		}
 
@@ -340,6 +344,9 @@ namespace Exprtmpl
 			GetOutput = typeof(Compiler).GetMethod(
 				"Output", BindingFlags.Public |
 								BindingFlags.NonPublic | BindingFlags.Static);
+			GetConditionTest = typeof(Compiler).GetMethod(
+				"ConditionTest", BindingFlags.Public |
+						BindingFlags.NonPublic | BindingFlags.Static);
 			GetConcat = typeof(Compiler).GetMethod(
 				"Concat", BindingFlags.Public |
 						BindingFlags.NonPublic | BindingFlags.Static);
@@ -419,6 +426,9 @@ namespace Exprtmpl
 			CallForRange2 = typeof(Compiler).GetMethod(
 				"ForRange2", BindingFlags.Public |
 							BindingFlags.NonPublic | BindingFlags.Static);
+			CallMethodInvoke = typeof(Compiler).GetMethod(
+				"MethodInvoke", BindingFlags.Public |
+							BindingFlags.NonPublic | BindingFlags.Static);
 			CallInclude = typeof(Compiler).GetMethod(
 				"Include", BindingFlags.Public |
 							BindingFlags.NonPublic | BindingFlags.Static);
@@ -435,6 +445,7 @@ namespace Exprtmpl
 		}
 
 		private static readonly MethodInfo GetOutput;
+		private static readonly MethodInfo GetConditionTest;
 		private static readonly MethodInfo GetConcat;
 		private static readonly MethodInfo GetAdd;
 		private static readonly MethodInfo GetSubtract;
@@ -461,6 +472,7 @@ namespace Exprtmpl
 		private static readonly MethodInfo CallForLoop2;
 		private static readonly MethodInfo CallForRange1;
 		private static readonly MethodInfo CallForRange2;
+		private static readonly MethodInfo CallMethodInvoke;
 		private static readonly MethodInfo CallInclude;
 		private static readonly MethodInfo GetPushStack;
 		private static readonly MethodInfo GetPopStack;
@@ -482,6 +494,11 @@ namespace Exprtmpl
 			default:
 				throw new InvalidCastException();
 			}
+		}
+
+		private static bool ConditionTest(Value value)
+		{
+			return (bool)value;
 		}
 
 		private static Value Concat(Value left, Value right)
@@ -901,6 +918,11 @@ namespace Exprtmpl
 			}
 		}
 
+		private static Value MethodInvoke(Func<Value[], Value> method, Value[] values)
+		{
+			return method(values);
+		}
+
 		private static void Include(
 			StringBuilder builder, ControlStack stack, Action<StringBuilder, ControlStack> action)
 		{
@@ -941,8 +963,8 @@ namespace Exprtmpl
 
 		private abstract class ControlFlow
 		{
-			public readonly Compiler Compiler;
-			public readonly ControlFlow Previous;
+			protected readonly Compiler Compiler;
+			protected readonly ControlFlow Previous;
 			public abstract ParameterExpression Builder { get; }
 			public abstract ParameterExpression Parameter { get; }
 			public abstract List<Expression> Blocks { get; }
@@ -968,37 +990,37 @@ namespace Exprtmpl
 				throw new NotImplementedException();
 			}
 
-			public virtual ControlFlow End(int offset, ExprtmplParser.EndContext context)
+			public virtual ControlFlow End(string file, int offset, ExprtmplParser.EndContext context)
 			{
 				throw new NotImplementedException();
 			}
 
-			public virtual ControlFlow If(int offset, ExprtmplParser.IfContext context)
+			public virtual ControlFlow If(string file, int offset, ExprtmplParser.IfContext context)
 			{
 				return new IfControlFlow(Compiler, this, context);
 			}
 
-			public virtual ControlFlow ElseIf(int offset, ExprtmplParser.ElseifContext context)
+			public virtual ControlFlow ElseIf(string file, int offset, ExprtmplParser.ElseifContext context)
 			{
 				throw new NotImplementedException();
 			}
 
-			public virtual ControlFlow Else(int offset, ExprtmplParser.ElseContext context)
+			public virtual ControlFlow Else(string file, int offset, ExprtmplParser.ElseContext context)
 			{
 				throw new NotImplementedException();
 			}
 
-			public virtual ControlFlow ForLoop1(int offset, ExprtmplParser.Forloop1Context context)
+			public virtual ControlFlow ForLoop1(string file, int offset, ExprtmplParser.Forloop1Context context)
 			{
 				return new ForLoop1ControlFlow(Compiler, this, context);
 			}
 
-			public virtual ControlFlow ForLoop2(int offset, ExprtmplParser.Forloop2Context context)
+			public virtual ControlFlow ForLoop2(string file, int offset, ExprtmplParser.Forloop2Context context)
 			{
 				return new ForLoop2ControlFlow(Compiler, this, context);
 			}
 
-			public virtual ControlFlow ForRange(int offset, ExprtmplParser.ForrangeContext context)
+			public virtual ControlFlow ForRange(string file, int offset, ExprtmplParser.ForrangeContext context)
 			{
 				return new ForRangeControlFlow(Compiler, this, context);
 			}
@@ -1044,7 +1066,7 @@ namespace Exprtmpl
 						Func<Value[], Value> method;
 						if (Compiler.methods[i].TryGetValue(name, out method))
 						{
-							return Expression.Call(Expression.Constant(method.Target), method.Method,
+							return Expression.Call(CallMethodInvoke, Expression.Constant(method),
 													Expression.NewArrayInit(
 														typeof(Value), call.value().Select(CompileValue)));
 						}
@@ -1144,8 +1166,8 @@ namespace Exprtmpl
 				Expression expr = CompileValue(ands[0]);
 				for (int i = 1; i < ands.Length; ++i)
 				{
-					expr = Expression.OrElse(Expression.Convert(expr, typeof(bool)),
-											Expression.Convert(CompileValue(ands[i]), typeof(bool)));
+					expr = Expression.OrElse(Expression.Call(GetConditionTest, expr),
+											Expression.Call(GetConditionTest, CompileValue(ands[i])));
 				}
 				return Expression.Convert(expr, typeof(Value));
 			}
@@ -1156,8 +1178,8 @@ namespace Exprtmpl
 				Expression expr = CompileValue(booleans[0]);
 				for (int i = 1; i < booleans.Length; ++i)
 				{
-					expr = Expression.AndAlso(Expression.Convert(expr, typeof(bool)),
-											Expression.Convert(CompileValue(booleans[i]), typeof(bool)));
+					expr = Expression.AndAlso(Expression.Call(GetConditionTest, expr),
+											Expression.Call(GetConditionTest, CompileValue(booleans[i])));
 				}
 				return Expression.Convert(expr, typeof(Value));
 			}
@@ -1418,25 +1440,25 @@ namespace Exprtmpl
 				condition = member != null ? CompileValue(member) : CompileValue(context.or());
 			}
 
-			public override ControlFlow End(int offset, ExprtmplParser.EndContext context)
+			public override ControlFlow End(string file, int offset, ExprtmplParser.EndContext context)
 			{
 				Previous.Blocks.Add(then
 										? Expression.IfThen(
-											Expression.Convert(condition, typeof(bool)),
+											Expression.Call(GetConditionTest, condition),
 											Expression.Block(thenblocks))
 										: Expression.IfThenElse(
-											Expression.Convert(condition, typeof(bool)),
+											Expression.Call(GetConditionTest, condition),
 											Expression.Block(thenblocks), Expression.Block(elseblocks)));
 				return Previous;
 			}
 
-			public override ControlFlow ElseIf(int offset, ExprtmplParser.ElseifContext context)
+			public override ControlFlow ElseIf(string file, int offset, ExprtmplParser.ElseifContext context)
 			{
 				then = false;
 				return new IfControlFlow(Compiler, this, context);
 			}
 
-			public override ControlFlow Else(int offset, ExprtmplParser.ElseContext context)
+			public override ControlFlow Else(string file, int offset, ExprtmplParser.ElseContext context)
 			{
 				then = false;
 				return this;
@@ -1468,7 +1490,7 @@ namespace Exprtmpl
 
 			protected abstract Expression End(Expression stack);
 
-			public override ControlFlow End(int offset, ExprtmplParser.EndContext context)
+			public override ControlFlow End(string file, int offset, ExprtmplParser.EndContext context)
 			{
 				ParameterExpression stack = Expression.Variable(typeof(InnerStack));
 				Previous.Blocks.Add(Expression.Block(new ParameterExpression[] {stack},
