@@ -27,13 +27,23 @@ namespace Exprtmpl
 
 		private readonly Func<string, Task<string>> loader;
 		private readonly IReadOnlyDictionary<string, Func<Value[], Value>>[] methods;
+		private readonly Dictionary<string, Expression<Action<StringBuilder, ControlStack>>> includes;
 		private ControlFlow flow;
 
-		public Compiler(Func<string, Task<string>> loader) : this(loader, emptymethods) { }
-		public Compiler(Func<string, Task<string>> loader, params IReadOnlyDictionary<string, Func<Value[], Value>>[] methods)
+		public Compiler(Func<string, Task<string>> loader) :
+			this(loader, emptymethods, new Dictionary<string, Expression<Action<StringBuilder, ControlStack>>>()) { }
+
+		public Compiler(
+			Func<string, Task<string>> loader, params IReadOnlyDictionary<string, Func<Value[], Value>>[] methods) :
+			this(loader, methods, new Dictionary<string, Expression<Action<StringBuilder, ControlStack>>>()) { }
+
+		private Compiler(
+			Func<string, Task<string>> loader, IReadOnlyDictionary<string, Func<Value[], Value>>[] methods,
+			Dictionary<string, Expression<Action<StringBuilder, ControlStack>>> includes)
 		{
 			this.loader = loader;
 			this.methods = methods;
+			this.includes = includes;
 			flow = new BaseControlFlow(this);
 		}
 
@@ -211,8 +221,13 @@ namespace Exprtmpl
 						break;
 					}
 				}
-				Compiler includecompiler = new Compiler(compiler.loader, compiler.methods);
-				var lambda = await includecompiler.Load(include);
+				Expression<Action<StringBuilder, ControlStack>> lambda;
+				if (!compiler.includes.TryGetValue(include, out lambda))
+				{
+					Compiler includecompiler = new Compiler(compiler.loader, compiler.methods, compiler.includes);
+					lambda = await includecompiler.Load(include);
+					compiler.includes[include] = lambda;
+				}
 				ExprtmplParser.ValueContext value = context.value();
 				if (value == null)
 				{
