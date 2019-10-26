@@ -11,18 +11,21 @@ public static class ExprtmplTest
 	<head><title>test</title></head>
 	<body>
 		<ul>
-		#for row in rows
+		#for row in rows[20:30]
 			#if row.Print
-			#import test with {title:row.Message..' libla'}
+			#import test with {title:row.Message..' import'}
 			<li>ID::{row.ID}, Message::{row.Message}</li>
 			#end
+		#end
+		#for key, value in rows[20]
+			:{key} :{value}
 		#end
 		</ul>
 	</body>
 </html>
 ";
 	private const string include = @"
-			test :{title}
+			<li>test :{title[1:3]}</li>
 ";
 	private static readonly Dictionary<string, string> files = new Dictionary<string, string> {
 		{"start", template},
@@ -46,6 +49,7 @@ public static class ExprtmplTest
 		}
 		table = Table.From(new Dictionary<string, Value> {
 			{"rows", Array.From(rows)},
+			{"title", "libla"}
 		});
 	}
 

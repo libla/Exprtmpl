@@ -18,6 +18,8 @@ namespace Exprtmpl
 	{
 		private static readonly ThreadLocal<StringBuilder> localbuilder =
 			new ThreadLocal<StringBuilder>(() => new StringBuilder());
+		private static readonly ThreadLocal<BaseStack> localbasestack =
+			new ThreadLocal<BaseStack>(() => new BaseStack());
 		private static readonly ThreadLocal<Stack<InnerStack>> localstacks =
 			new ThreadLocal<Stack<InnerStack>>(() => new Stack<InnerStack>());
 		private static readonly ConcurrentQueue<InnerStack> freestacks = new ConcurrentQueue<InnerStack>();
@@ -53,10 +55,13 @@ namespace Exprtmpl
 			Action<StringBuilder, ControlStack> format = lambda.Compile();
 			return table =>
 			{
-				StringBuilder value = localbuilder.Value;
-				value.Clear();
-				format(value, new BaseStack {Table = table});
-				return value.ToString();
+				StringBuilder builder = localbuilder.Value;
+				builder.Clear();
+				BaseStack basestack = localbasestack.Value;
+				basestack.Table = table;
+				format(builder, basestack);
+				basestack.Table = null;
+				return builder.ToString();
 			};
 		}
 
@@ -245,6 +250,9 @@ namespace Exprtmpl
 																CallInclude, compiler.flow.Builder, stack, lambda),
 															Expression.Call(GetPopStack, stack)));
 				}
+				ITerminalNode newline = context.NEWLINE();
+				if (newline != null)
+					compiler.flow.AddOutput(newline.GetText());
 			}
 
 			public override void EnterEnd(ExprtmplParser.EndContext context)
@@ -371,12 +379,6 @@ namespace Exprtmpl
 			GetLessThanOrEqual = typeof(Compiler).GetMethod(
 				"LessThanOrEqual", BindingFlags.Public |
 									BindingFlags.NonPublic | BindingFlags.Static);
-			GetAnd = typeof(Compiler).GetMethod(
-				"And", BindingFlags.Public |
-						BindingFlags.NonPublic | BindingFlags.Static);
-			GetOr = typeof(Compiler).GetMethod(
-				"Or", BindingFlags.Public |
-					BindingFlags.NonPublic | BindingFlags.Static);
 			GetNot = typeof(Compiler).GetMethod(
 				"Not", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
 			GetNegate = typeof(Compiler).GetMethod(
@@ -388,8 +390,11 @@ namespace Exprtmpl
 			GetSubstring2 = typeof(Compiler).GetMethod(
 				"Substring2", BindingFlags.Public |
 							BindingFlags.NonPublic | BindingFlags.Static);
-			GetIndex = typeof(Compiler).GetMethod(
-				"Index", BindingFlags.Public |
+			GetIndex1 = typeof(Compiler).GetMethod(
+				"Index1", BindingFlags.Public |
+						BindingFlags.NonPublic | BindingFlags.Static);
+			GetIndex2 = typeof(Compiler).GetMethod(
+				"Index2", BindingFlags.Public |
 						BindingFlags.NonPublic | BindingFlags.Static);
 			GetMember = typeof(Compiler).GetMethod(
 				"Member", BindingFlags.Public |
@@ -443,13 +448,12 @@ namespace Exprtmpl
 		private static readonly MethodInfo GetGreaterThanOrEqual;
 		private static readonly MethodInfo GetLessThan;
 		private static readonly MethodInfo GetLessThanOrEqual;
-		private static readonly MethodInfo GetAnd;
-		private static readonly MethodInfo GetOr;
 		private static readonly MethodInfo GetNot;
 		private static readonly MethodInfo GetNegate;
 		private static readonly MethodInfo GetSubstring1;
 		private static readonly MethodInfo GetSubstring2;
-		private static readonly MethodInfo GetIndex;
+		private static readonly MethodInfo GetIndex1;
+		private static readonly MethodInfo GetIndex2;
 		private static readonly MethodInfo GetMember;
 		private static readonly MethodInfo CreateNewTable;
 		private static readonly MethodInfo CreateNewArray;
@@ -629,24 +633,6 @@ namespace Exprtmpl
 			return (double)left <= (double)right;
 		}
 
-		private static Value And(Value left, Value right)
-		{
-			if (left == null)
-				throw new ArgumentNullException("left");
-			if (right == null)
-				throw new ArgumentNullException("right");
-			return (bool)left && (bool)right;
-		}
-
-		private static Value Or(Value left, Value right)
-		{
-			if (left == null)
-				throw new ArgumentNullException("left");
-			if (right == null)
-				throw new ArgumentNullException("right");
-			return (bool)left || (bool)right;
-		}
-
 		private static Value Not(Value value)
 		{
 			if (value == null)
@@ -692,7 +678,7 @@ namespace Exprtmpl
 			return str.Substring(fromIndex, toIndex - fromIndex + 1);
 		}
 
-		private static Value Index(Value value, Value index)
+		private static Value Index1(Value value, Value index)
 		{
 			if (value == null)
 				throw new ArgumentNullException("value");
@@ -704,6 +690,38 @@ namespace Exprtmpl
 				return ((Table)value)[(string)index];
 			case ValueType.Array:
 				return ((Array)value)[(int)index];
+			case ValueType.String:
+				return Substring1(value, index);
+			}
+			throw new InvalidOperationException();
+		}
+
+		private static Value Index2(Value value, Value from, Value to)
+		{
+			if (value == null)
+				throw new ArgumentNullException("value");
+			if (from == null)
+				throw new ArgumentNullException("from");
+			if (to == null)
+				throw new ArgumentNullException("to");
+			switch (value.Type)
+			{
+			case ValueType.Array:
+				{
+					Array array = (Array)value;
+					int fromIndex = (int)from;
+					int toIndex = (int)to;
+					if (fromIndex < 0)
+						fromIndex = array.Count + fromIndex + 1;
+					if (toIndex < 0)
+						toIndex = array.Count + toIndex;
+					Value[] values = new Value[Math.Max(0, toIndex - fromIndex + 1)];
+					for (int i = 0; i <= toIndex - fromIndex; i++)
+						values[i] = array[i + fromIndex];
+					return NewArray(values);
+				}
+			case ValueType.String:
+				return Substring2(value, from, to);
 			}
 			throw new InvalidOperationException();
 		}
@@ -791,6 +809,17 @@ namespace Exprtmpl
 					stack.Values[name1] = kv.Key;
 					stack.Values[name2] = kv.Value;
 					action(builder, stack);
+				}
+				break;
+			case ValueType.Array:
+				{
+					Array array = (Array)value;
+					for (int i = 0, j = array.Count; i < j; i++)
+					{
+						stack.Values[name1] = i;
+						stack.Values[name2] = array[i];
+						action(builder, stack);
+					}
 				}
 				break;
 			default:
@@ -1045,13 +1074,30 @@ namespace Exprtmpl
 				ITerminalNode name = context.NAME();
 				if (name != null)
 					return Expression.Call(GetMember, parent, Expression.Constant(name.GetText(), typeof(string)));
+				ExprtmplParser.IndexContext index = context.index();
+				if (index != null)
+					return Expression.Call(GetIndex1, parent, CompileValue(index));
+				return Expression.Call(GetIndex2, parent, CompileValue(context.subindex(0)),
+										CompileValue(context.subindex(1)));
+			}
+
+			public Expression CompileValue(ExprtmplParser.IndexContext context)
+			{
 				ExprtmplParser.ConcatContext concat = context.concat();
 				if (concat != null)
-					return Expression.Call(GetIndex, parent, CompileValue(concat));
+					return CompileValue(concat);
 				ExprtmplParser.NumericContext numeric = context.numeric();
 				if (numeric != null)
-					return Expression.Call(GetIndex, parent, CompileValue(numeric));
-				return Expression.Call(GetIndex, parent, CompileValue(context.member()));
+					return CompileValue(numeric);
+				return CompileValue(context.member());
+			}
+
+			public Expression CompileValue(ExprtmplParser.SubindexContext context)
+			{
+				ExprtmplParser.NumericContext numeric = context.numeric();
+				if (numeric != null)
+					return CompileValue(numeric);
+				return CompileValue(context.member());
 			}
 
 			public Expression CompileValue(ExprtmplParser.ConcatContext context)
@@ -1097,8 +1143,11 @@ namespace Exprtmpl
 				ExprtmplParser.AndContext[] ands = context.and();
 				Expression expr = CompileValue(ands[0]);
 				for (int i = 1; i < ands.Length; ++i)
-					expr = Expression.Call(GetOr, expr, CompileValue(ands[i]));
-				return expr;
+				{
+					expr = Expression.OrElse(Expression.Convert(expr, typeof(bool)),
+											Expression.Convert(CompileValue(ands[i]), typeof(bool)));
+				}
+				return Expression.Convert(expr, typeof(Value));
 			}
 
 			public Expression CompileValue(ExprtmplParser.AndContext context)
@@ -1106,8 +1155,11 @@ namespace Exprtmpl
 				ExprtmplParser.BooleanContext[] booleans = context.boolean();
 				Expression expr = CompileValue(booleans[0]);
 				for (int i = 1; i < booleans.Length; ++i)
-					expr = Expression.Call(GetAnd, expr, CompileValue(booleans[i]));
-				return expr;
+				{
+					expr = Expression.AndAlso(Expression.Convert(expr, typeof(bool)),
+											Expression.Convert(CompileValue(booleans[i]), typeof(bool)));
+				}
+				return Expression.Convert(expr, typeof(Value));
 			}
 
 			public Expression CompileValue(ExprtmplParser.BooleanContext context)
@@ -1335,7 +1387,7 @@ namespace Exprtmpl
 			private readonly List<Expression> elseblocks = new List<Expression>();
 
 			private bool then;
-			private readonly ExprtmplParser.BooleanContext condition;
+			private readonly Expression condition;
 
 			public override ParameterExpression Builder
 			{
@@ -1355,23 +1407,25 @@ namespace Exprtmpl
 			public IfControlFlow(Compiler compiler, ControlFlow previous, ExprtmplParser.IfContext context) : base(compiler, previous)
 			{
 				then = true;
-				condition = context.boolean();
+				ExprtmplParser.MemberContext member = context.member();
+				condition = member != null ? CompileValue(member) : CompileValue(context.or());
 			}
 
 			public IfControlFlow(Compiler compiler, ControlFlow previous, ExprtmplParser.ElseifContext context) : base(compiler, previous)
 			{
 				then = true;
-				condition = context.boolean();
+				ExprtmplParser.MemberContext member = context.member();
+				condition = member != null ? CompileValue(member) : CompileValue(context.or());
 			}
 
 			public override ControlFlow End(int offset, ExprtmplParser.EndContext context)
 			{
 				Previous.Blocks.Add(then
 										? Expression.IfThen(
-											Expression.Convert(CompileValue(condition), typeof(bool)),
+											Expression.Convert(condition, typeof(bool)),
 											Expression.Block(thenblocks))
 										: Expression.IfThenElse(
-											Expression.Convert(CompileValue(condition), typeof(bool)),
+											Expression.Convert(condition, typeof(bool)),
 											Expression.Block(thenblocks), Expression.Block(elseblocks)));
 				return Previous;
 			}

@@ -1,34 +1,34 @@
 ﻿grammar Exprtmpl;
 
 control:
-	include|end|forloop1|forloop2|forrange|if|elseif|else EOF
+	(include|end|forloop1|forloop2|forrange|if|elseif|else) EOF
 	;
 content:
 	.*? (expr .*?)* EOF
 	;
 include:
-	INCLUDE ('with' value)?
+	INCLUDE ('with' value)? NEWLINE?
 	;
 end:
-	K_END
+	K_END NEWLINE?
 	;
 forloop1:
-	K_FOR NAME K_IN value
+	K_FOR NAME K_IN value NEWLINE?
 	;
 forloop2:
-	K_FOR NAME ',' NAME K_IN value
+	K_FOR NAME ',' NAME K_IN value NEWLINE?
 	;
 forrange:
-	K_FOR NAME '=' numeric ',' numeric (',' numeric)?
+	K_FOR NAME '=' numeric ',' numeric (',' numeric)? NEWLINE?
 	;
 if:
-	K_IF boolean
+	K_IF (member|or) NEWLINE?
 	;
 elseif:
-	K_ELSEIF boolean
+	K_ELSEIF (member|or) NEWLINE?
 	;
 else:
-	K_ELSE
+	K_ELSE NEWLINE?
 	;
 expr:
 	':{' value '}'
@@ -40,13 +40,19 @@ member:
 	NAME suffix*
 	;
 suffix:
-	'.' NAME|'[' (member|concat|numeric) ']'
+	'.' NAME|'[' index ']'|'[' subindex ':' subindex ']'
+	;
+index:
+	member|concat|numeric
+	;
+subindex:
+	member|numeric
 	;
 concat:
 	string ('..' string)*
 	;
 string:
-	(STRING|member|'(' concat ')') ('[' substring ('->' substring)? ']')?
+	(STRING|member|'(' concat ')') ('[' substring (':' substring)? ']')?
 	;
 substring:
 	member|numeric
@@ -82,7 +88,7 @@ call:
 	NAME '(' value? (',' value)* ')'
 	;
 NEWLINE:
-	('\r\n'|'\n'|'\r'|'\f')+ -> skip
+	('\r\n'|'\n'|'\r'|'\f')+
 	;
 BLANK:
 	(' '|'\t'|'\u000B')+ -> skip

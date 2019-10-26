@@ -229,7 +229,7 @@ namespace Exprtmpl
 
 		public static implicit operator Value(bool value)
 		{
-			return new BooleanValue(value);
+			return value ? BooleanValue.True : BooleanValue.False;
 		}
 
 		public static implicit operator Value(double value)
@@ -254,9 +254,12 @@ namespace Exprtmpl
 
 		private class BooleanValue : Value
 		{
+			public static BooleanValue True = new BooleanValue(true);
+			public static BooleanValue False = new BooleanValue(false);
+
 			private readonly bool value;
 
-			public BooleanValue(bool value)
+			private BooleanValue(bool value)
 			{
 				this.value = value;
 			}
