@@ -11,8 +11,8 @@ public static class ExprtmplTest
 	<head><title>test</title></head>
 	<body>
 		<ul>
-		#for row in rows[20:30]
-			#if row.Print
+		#for row in rows
+			#if row.ID % 2 == 0
 			#import test with {title:row.Message..' import'}
 			<li>ID::{row.ID}, Message::{row.Message}</li>
 			#end
@@ -44,7 +44,6 @@ public static class ExprtmplTest
 			rows.Add(Table.From(new Dictionary<string, Value> {
 				{"ID", i},
 				{"Message", string.Format("message {0}", i)},
-				{"Print", (i & 1) == 0},
 			}));
 		}
 		table = Table.From(new Dictionary<string, Value> {
