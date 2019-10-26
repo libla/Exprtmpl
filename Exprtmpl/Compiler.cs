@@ -39,8 +39,8 @@ namespace Exprtmpl
 
 		public async Task<Func<Table, string>> Compile(string file)
 		{
-			Expression<Action<StringBuilder, ControlStack>> expr = await Load(file);
-			Action<StringBuilder, ControlStack> format = expr.Compile();
+			Expression<Action<StringBuilder, ControlStack>> lambda = await Load(file);
+			Action<StringBuilder, ControlStack> format = lambda.Compile();
 			return table =>
 			{
 				StringBuilder value = localbuilder.Value;
@@ -189,7 +189,47 @@ namespace Exprtmpl
 
 			public override void EnterInclude(ExprtmplParser.IncludeContext context)
 			{
-				compiler.flow = compiler.flow.Include(offset, context);
+				task = LoadInclude(context);
+			}
+
+			private async Task LoadInclude(ExprtmplParser.IncludeContext context)
+			{
+				string include = context.INCLUDE().GetText();
+				bool keyword = true;
+				for (int i = 0; i < include.Length; i++)
+				{
+					char c = include[i];
+					if (keyword)
+					{
+						if (c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z')
+							continue;
+						keyword = false;
+					}
+					if (c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_')
+					{
+						include = include.Substring(i);
+						break;
+					}
+				}
+				Compiler includecompiler = new Compiler(compiler.loader, compiler.methods);
+				var lambda = await includecompiler.Load(include);
+				ExprtmplParser.ValueContext value = context.value();
+				if (value == null)
+				{
+					compiler.flow.Blocks.Add(Expression.Call(CallInclude, compiler.flow.Builder,compiler.flow.Parameter, lambda));
+				}
+				else
+				{
+					ParameterExpression stack = Expression.Variable(typeof(InnerStack));
+					compiler.flow.Blocks.Add(Expression.Block(new ParameterExpression[] {stack},
+															Expression.Assign(
+																stack,
+																Expression.Call(
+																	GetPushStack, compiler.flow.CompileValue(value))),
+															Expression.Call(
+																CallInclude, compiler.flow.Builder, stack, lambda),
+															Expression.Call(GetPopStack, stack)));
+				}
 			}
 
 			public override void EnterEnd(ExprtmplParser.EndContext context)
@@ -359,6 +399,9 @@ namespace Exprtmpl
 			CallForRange2 = typeof(Compiler).GetMethod(
 				"ForRange2", BindingFlags.Public |
 							BindingFlags.NonPublic | BindingFlags.Static);
+			CallInclude = typeof(Compiler).GetMethod(
+				"Include", BindingFlags.Public |
+							BindingFlags.NonPublic | BindingFlags.Static);
 
 			GetPushStack = typeof(Compiler).GetMethod(
 				"PushStack", BindingFlags.Public |
@@ -399,6 +442,7 @@ namespace Exprtmpl
 		private static readonly MethodInfo CallForLoop2;
 		private static readonly MethodInfo CallForRange1;
 		private static readonly MethodInfo CallForRange2;
+		private static readonly MethodInfo CallInclude;
 		private static readonly MethodInfo GetPushStack;
 		private static readonly MethodInfo GetPopStack;
 		private static readonly MethodInfo GetClearStack;
@@ -690,9 +734,10 @@ namespace Exprtmpl
 		}
 
 		private static void ForLoop1(
-			StringBuilder builder, InnerStack stack, Value value, string name, Action<StringBuilder, ControlStack> loop)
+			StringBuilder builder, InnerStack stack, Value value, string name,
+			Action<StringBuilder, ControlStack> action)
 		{
-			Contract.Requires(loop != null);
+			Contract.Requires(action != null);
 			if (value == null)
 				throw new ArgumentNullException("value");
 			switch (value.Type)
@@ -701,14 +746,14 @@ namespace Exprtmpl
 				foreach (string key in ((Table)value).Keys())
 				{
 					stack.Values[name] = key;
-					loop(builder, stack);
+					action(builder, stack);
 				}
 				break;
 			case ValueType.Array:
 				foreach (Value entry in (Array)value)
 				{
 					stack.Values[name] = entry;
-					loop(builder, stack);
+					action(builder, stack);
 				}
 				break;
 			default:
@@ -718,9 +763,9 @@ namespace Exprtmpl
 
 		private static void ForLoop2(
 			StringBuilder builder, InnerStack stack, Value value, string name1, string name2,
-			Action<StringBuilder, ControlStack> loop)
+			Action<StringBuilder, ControlStack> action)
 		{
-			Contract.Requires(loop != null);
+			Contract.Requires(action != null);
 			if (value == null)
 				throw new ArgumentNullException("value");
 			switch (value.Type)
@@ -730,7 +775,7 @@ namespace Exprtmpl
 				{
 					stack.Values[name1] = kv.Key;
 					stack.Values[name2] = kv.Value;
-					loop(builder, stack);
+					action(builder, stack);
 				}
 				break;
 			default:
@@ -740,9 +785,9 @@ namespace Exprtmpl
 
 		private static void ForRange1(
 			StringBuilder builder, InnerStack stack, Value from, Value to, string name,
-			Action<StringBuilder, ControlStack> loop)
+			Action<StringBuilder, ControlStack> action)
 		{
-			Contract.Requires(loop != null);
+			Contract.Requires(action != null);
 			if (from == null)
 				throw new ArgumentNullException("from");
 			if (to == null)
@@ -758,7 +803,7 @@ namespace Exprtmpl
 				while (value - toNumber < double.Epsilon)
 				{
 					stack.Values[name] = value;
-					loop(builder, stack);
+					action(builder, stack);
 					value += stepNumber;
 				}
 			}
@@ -768,7 +813,7 @@ namespace Exprtmpl
 				while (value - toNumber > -double.Epsilon)
 				{
 					stack.Values[name] = value;
-					loop(builder, stack);
+					action(builder, stack);
 					value += stepNumber;
 				}
 			}
@@ -776,9 +821,9 @@ namespace Exprtmpl
 
 		private static void ForRange2(
 			StringBuilder builder, InnerStack stack, Value from, Value to, Value step, string name,
-			Action<StringBuilder, ControlStack> loop)
+			Action<StringBuilder, ControlStack> action)
 		{
-			Contract.Requires(loop != null);
+			Contract.Requires(action != null);
 			if (from == null)
 				throw new ArgumentNullException("from");
 			if (to == null)
@@ -796,7 +841,7 @@ namespace Exprtmpl
 				while (value - toNumber < double.Epsilon)
 				{
 					stack.Values[name] = value;
-					loop(builder, stack);
+					action(builder, stack);
 					value += stepNumber;
 				}
 			}
@@ -806,27 +851,34 @@ namespace Exprtmpl
 				while (value - toNumber > -double.Epsilon)
 				{
 					stack.Values[name] = value;
-					loop(builder, stack);
+					action(builder, stack);
 					value += stepNumber;
 				}
 			}
 		}
 
-		private static InnerStack PushStack(ControlStack stack)
+		private static void Include(
+			StringBuilder builder, ControlStack stack, Action<StringBuilder, ControlStack> action)
+		{
+			Contract.Requires(action != null);
+			action(builder, stack);
+		}
+
+		private static InnerStack PushStack(Value value)
 		{
 			var stacks = localstacks.Value;
-			InnerStack newstack;
+			InnerStack stack;
 			if (stacks.Count != 0)
 			{
-				newstack = stacks.Pop();
+				stack = stacks.Pop();
 			}
 			else
 			{
-				if (!freestacks.TryDequeue(out newstack))
-					newstack = new InnerStack();
+				if (!freestacks.TryDequeue(out stack))
+					stack = new InnerStack();
 			}
-			newstack.SetPrevious(stack);
-			return newstack;
+			stack.SetPrevious(value);
+			return stack;
 		}
 
 		private static void PopStack(InnerStack stack)
@@ -879,7 +931,7 @@ namespace Exprtmpl
 
 			public virtual ControlFlow If(int offset, ExprtmplParser.IfContext context)
 			{
-				throw new NotImplementedException();
+				return new IfControlFlow(Compiler, this, context);
 			}
 
 			public virtual ControlFlow ElseIf(int offset, ExprtmplParser.ElseifContext context)
@@ -894,22 +946,17 @@ namespace Exprtmpl
 
 			public virtual ControlFlow ForLoop1(int offset, ExprtmplParser.Forloop1Context context)
 			{
-				throw new NotImplementedException();
+				return new ForLoop1ControlFlow(Compiler, this, context);
 			}
 
 			public virtual ControlFlow ForLoop2(int offset, ExprtmplParser.Forloop2Context context)
 			{
-				throw new NotImplementedException();
+				return new ForLoop2ControlFlow(Compiler, this, context);
 			}
 
 			public virtual ControlFlow ForRange(int offset, ExprtmplParser.ForrangeContext context)
 			{
-				throw new NotImplementedException();
-			}
-
-			public virtual ControlFlow Include(int offset, ExprtmplParser.IncludeContext context)
-			{
-				throw new NotImplementedException();
+				return new ForRangeControlFlow(Compiler, this, context);
 			}
 
 			#region 解析表达式
@@ -941,13 +988,13 @@ namespace Exprtmpl
 																	table
 																	.NAME()
 																	.Select(name => Expression.Constant(
-																				name.Symbol.Text, typeof(string)))),
+																				name.GetText(), typeof(string)))),
 											Expression.NewArrayInit(typeof(Value), table.value().Select(CompileValue)));
 				}
 				ExprtmplParser.CallContext call = context.call();
 				if (call != null)
 				{
-					string name = call.NAME().Symbol.Text;
+					string name = call.NAME().GetText();
 					for (int i = 0; i < Compiler.methods.Length; i++)
 					{
 						Func<Value[], Value> method;
@@ -967,7 +1014,7 @@ namespace Exprtmpl
 			{
 				int index = 0;
 				Expression parent = Expression.Call(GetMember, Parameter,
-													Expression.Constant(context.NAME().Symbol.Text, typeof(string)));
+													Expression.Constant(context.NAME().GetText(), typeof(string)));
 				ExprtmplParser.SuffixContext[] suffixs = context.suffix();
 				while (true)
 				{
@@ -982,7 +1029,7 @@ namespace Exprtmpl
 			{
 				ITerminalNode name = context.NAME();
 				if (name != null)
-					return Expression.Call(GetMember, parent, Expression.Constant(name.Symbol.Text, typeof(string)));
+					return Expression.Call(GetMember, parent, Expression.Constant(name.GetText(), typeof(string)));
 				ExprtmplParser.ConcatContext concat = context.concat();
 				if (concat != null)
 					return Expression.Call(GetIndex, parent, CompileValue(concat));
@@ -1007,7 +1054,7 @@ namespace Exprtmpl
 				ITerminalNode node = context.STRING();
 				if (node != null)
 				{
-					expr = Expression.Constant((Value)Escape(node.Symbol.Text), typeof(Value));
+					expr = Expression.Constant((Value)Escape(node.GetText()), typeof(Value));
 				}
 				else
 				{
@@ -1064,7 +1111,7 @@ namespace Exprtmpl
 				{
 					ITerminalNode op = context.EQ() ?? context.CMP();
 					MethodInfo method;
-					switch (op.Symbol.Text)
+					switch (op.GetText())
 					{
 					case "<":
 						method = GetLessThan;
@@ -1092,7 +1139,7 @@ namespace Exprtmpl
 					ExprtmplParser.ConcatContext[] concat = context.concat();
 					if (concat != null && concat.Length != 0)
 					{
-						expr = Expression.Call(context.EQ().Symbol.Text == "==" ? GetEqual : GetNotEqual,
+						expr = Expression.Call(context.EQ().GetText() == "==" ? GetEqual : GetNotEqual,
 												CompileValue(concat[0]), CompileValue(concat[1]));
 					}
 					else
@@ -1110,7 +1157,7 @@ namespace Exprtmpl
 				for (int i = 1; i < muls.Length; ++i)
 				{
 					ITerminalNode add = context.ADD(i - 1);
-					expr = Expression.Call(add.Symbol.Text == "+" ? GetAdd : GetSubtract, expr, CompileValue(muls[i]));
+					expr = Expression.Call(add.GetText() == "+" ? GetAdd : GetSubtract, expr, CompileValue(muls[i]));
 				}
 				return expr;
 			}
@@ -1122,7 +1169,7 @@ namespace Exprtmpl
 				for (int i = 1; i < powers.Length; ++i)
 				{
 					MethodInfo method;
-					switch (context.MUL(i - 1).Symbol.Text)
+					switch (context.MUL(i - 1).GetText())
 					{
 					case "*":
 						method = GetMultiply;
@@ -1155,7 +1202,7 @@ namespace Exprtmpl
 				node = context.HEX();
 				if (node != null)
 				{
-					expr = Expression.Constant((Value)Convert.ToInt32(node.Symbol.Text.Substring(2), 16),
+					expr = Expression.Constant((Value)Convert.ToInt32(node.GetText().Substring(2), 16),
 												typeof(Value));
 				}
 				else
@@ -1163,7 +1210,7 @@ namespace Exprtmpl
 					node = context.NUMBER();
 					if (node != null)
 					{
-						expr = Expression.Constant((Value)Convert.ToDouble(node.Symbol.Text), typeof(Value));
+						expr = Expression.Constant((Value)Convert.ToDouble(node.GetText()), typeof(Value));
 					}
 					else
 					{
@@ -1265,31 +1312,6 @@ namespace Exprtmpl
 				return Expression.Lambda<Action<StringBuilder, ControlStack>>(
 					Expression.Block(Blocks), true, builder, parameter);
 			}
-
-			public override ControlFlow If(int offset, ExprtmplParser.IfContext context)
-			{
-				return new IfControlFlow(Compiler, this, context);
-			}
-
-			public override ControlFlow ForLoop1(int offset, ExprtmplParser.Forloop1Context context)
-			{
-				return new ForLoop1ControlFlow(Compiler, this, context);
-			}
-
-			public override ControlFlow ForLoop2(int offset, ExprtmplParser.Forloop2Context context)
-			{
-				return new ForLoop2ControlFlow(Compiler, this, context);
-			}
-
-			public override ControlFlow ForRange(int offset, ExprtmplParser.ForrangeContext context)
-			{
-				return new ForRangeControlFlow(Compiler, this, context);
-			}
-
-			public override ControlFlow Include(int offset, ExprtmplParser.IncludeContext context)
-			{
-				throw new NotImplementedException();
-			}
 		}
 
 		private class IfControlFlow : ControlFlow
@@ -1298,7 +1320,7 @@ namespace Exprtmpl
 			private readonly List<Expression> elseblocks = new List<Expression>();
 
 			private bool then;
-			private readonly ExprtmplParser.ValueContext condition;
+			private readonly ExprtmplParser.BooleanContext condition;
 
 			public override ParameterExpression Builder
 			{
@@ -1318,13 +1340,13 @@ namespace Exprtmpl
 			public IfControlFlow(Compiler compiler, ControlFlow previous, ExprtmplParser.IfContext context) : base(compiler, previous)
 			{
 				then = true;
-				condition = context.value();
+				condition = context.boolean();
 			}
 
 			public IfControlFlow(Compiler compiler, ControlFlow previous, ExprtmplParser.ElseifContext context) : base(compiler, previous)
 			{
 				then = true;
-				condition = context.value();
+				condition = context.boolean();
 			}
 
 			public override ControlFlow End(int offset, ExprtmplParser.EndContext context)
@@ -1339,11 +1361,6 @@ namespace Exprtmpl
 				return Previous;
 			}
 
-			public override ControlFlow If(int offset, ExprtmplParser.IfContext context)
-			{
-				return new IfControlFlow(Compiler, this, context);
-			}
-
 			public override ControlFlow ElseIf(int offset, ExprtmplParser.ElseifContext context)
 			{
 				then = false;
@@ -1354,26 +1371,6 @@ namespace Exprtmpl
 			{
 				then = false;
 				return this;
-			}
-
-			public override ControlFlow ForLoop1(int offset, ExprtmplParser.Forloop1Context context)
-			{
-				return new ForLoop1ControlFlow(Compiler, this, context);
-			}
-
-			public override ControlFlow ForLoop2(int offset, ExprtmplParser.Forloop2Context context)
-			{
-				return new ForLoop2ControlFlow(Compiler, this, context);
-			}
-
-			public override ControlFlow ForRange(int offset, ExprtmplParser.ForrangeContext context)
-			{
-				return new ForRangeControlFlow(Compiler, this, context);
-			}
-
-			public override ControlFlow Include(int offset, ExprtmplParser.IncludeContext context)
-			{
-				throw new NotImplementedException();
 			}
 		}
 
@@ -1404,37 +1401,12 @@ namespace Exprtmpl
 
 			public override ControlFlow End(int offset, ExprtmplParser.EndContext context)
 			{
-				ParameterExpression value = Expression.Variable(typeof(InnerStack));
-				Previous.Blocks.Add(Expression.Block(new ParameterExpression[] {value},
+				ParameterExpression stack = Expression.Variable(typeof(InnerStack));
+				Previous.Blocks.Add(Expression.Block(new ParameterExpression[] {stack},
 													Expression.Assign(
-														value, Expression.Call(GetPushStack, Previous.Parameter)),
-													End(value), Expression.Call(GetPopStack, value)));
+														stack, Expression.Call(GetPushStack, Previous.Parameter)),
+													End(stack), Expression.Call(GetPopStack, stack)));
 				return Previous;
-			}
-
-			public override ControlFlow If(int offset, ExprtmplParser.IfContext context)
-			{
-				return new IfControlFlow(Compiler, this, context);
-			}
-
-			public override ControlFlow ForLoop1(int offset, ExprtmplParser.Forloop1Context context)
-			{
-				return new ForLoop1ControlFlow(Compiler, this, context);
-			}
-
-			public override ControlFlow ForLoop2(int offset, ExprtmplParser.Forloop2Context context)
-			{
-				return new ForLoop2ControlFlow(Compiler, this, context);
-			}
-
-			public override ControlFlow ForRange(int offset, ExprtmplParser.ForrangeContext context)
-			{
-				return new ForRangeControlFlow(Compiler, this, context);
-			}
-
-			public override ControlFlow Include(int offset, ExprtmplParser.IncludeContext context)
-			{
-				throw new NotImplementedException();
 			}
 		}
 
@@ -1450,7 +1422,7 @@ namespace Exprtmpl
 			protected override Expression End(Expression stack)
 			{
 				return Expression.Call(CallForLoop1, Previous.Builder, stack, Previous.CompileValue(forcontext.value()),
-										Expression.Constant(forcontext.NAME().Symbol.Text, typeof(string)),
+										Expression.Constant(forcontext.NAME().GetText(), typeof(string)),
 										Expression.Lambda<Action<StringBuilder, ControlStack>>(
 											Expression.Block(Blocks), true, Builder, Parameter));
 			}
@@ -1468,8 +1440,8 @@ namespace Exprtmpl
 			protected override Expression End(Expression stack)
 			{
 				return Expression.Call(CallForLoop2, Previous.Builder, stack, Previous.CompileValue(forcontext.value()),
-										Expression.Constant(forcontext.NAME(0).Symbol.Text, typeof(string)),
-										Expression.Constant(forcontext.NAME(1).Symbol.Text, typeof(string)),
+										Expression.Constant(forcontext.NAME(0).GetText(), typeof(string)),
+										Expression.Constant(forcontext.NAME(1).GetText(), typeof(string)),
 										Expression.Lambda<Action<StringBuilder, ControlStack>>(
 											Expression.Block(Blocks), true, Builder, Parameter));
 			}
@@ -1486,18 +1458,18 @@ namespace Exprtmpl
 
 			protected override Expression End(Expression stack)
 			{
-				ExprtmplParser.ValueContext[] values = forcontext.value();
+				ExprtmplParser.NumericContext[] values = forcontext.numeric();
 				Expression from = Previous.CompileValue(values[0]);
 				Expression to = Previous.CompileValue(values[1]);
 				if (values.Length == 3)
 				{
 					return Expression.Call(CallForRange2, Previous.Builder, stack, from, to, Previous.CompileValue(values[2]),
-											Expression.Constant(forcontext.NAME().Symbol.Text, typeof(string)),
+											Expression.Constant(forcontext.NAME().GetText(), typeof(string)),
 											Expression.Lambda<Action<StringBuilder, ControlStack>>(
 												Expression.Block(Blocks), true, Builder, Parameter));
 				}
 				return Expression.Call(CallForRange1, Previous.Builder, stack, from, to,
-										Expression.Constant(forcontext.NAME().Symbol.Text, typeof(string)),
+										Expression.Constant(forcontext.NAME().GetText(), typeof(string)),
 										Expression.Lambda<Action<StringBuilder, ControlStack>>(
 											Expression.Block(Blocks), true, Builder, Parameter));
 			}
@@ -1509,25 +1481,11 @@ namespace Exprtmpl
 			{
 				get { return ValueType.Table; }
 			}
-
-			public abstract ControlStack Previous { get; }
-
-			public abstract void Clear();
 		}
 
 		private class BaseStack : ControlStack
 		{
 			public Table Table;
-
-			public override ControlStack Previous
-			{
-				get { return null; }
-			}
-
-			public override void Clear()
-			{
-				Table = null;
-			}
 
 			protected override Table CastToTable()
 			{
@@ -1539,8 +1497,7 @@ namespace Exprtmpl
 		{
 			public readonly Dictionary<string, Value> Values;
 			private readonly StackTable table;
-			private Table previousTable;
-			private ControlStack previous;
+			private Table previous;
 
 			public InnerStack()
 			{
@@ -1548,21 +1505,14 @@ namespace Exprtmpl
 				table = new StackTable(this);
 			}
 
-			public override ControlStack Previous
+			public void SetPrevious(Value value)
 			{
-				get { return previous; }
+				previous = value == null ? null : (Table)value;
 			}
 
-			public void SetPrevious(ControlStack stack)
-			{
-				previous = stack;
-				previousTable = previous == null ? null : (Table)previous;
-			}
-
-			public override void Clear()
+			public void Clear()
 			{
 				previous = null;
-				previousTable = null;
 			}
 
 			protected override Table CastToTable()
@@ -1585,7 +1535,7 @@ namespace Exprtmpl
 					{
 						yield return key;
 					}
-					foreach (string key in stack.previousTable.Keys())
+					foreach (string key in stack.previous.Keys())
 					{
 						if (!stack.Values.ContainsKey(key))
 							yield return key;
@@ -1597,7 +1547,7 @@ namespace Exprtmpl
 					get
 					{
 						Value value;
-						return stack.Values.TryGetValue(key, out value) ? value : stack.previousTable[key];
+						return stack.Values.TryGetValue(key, out value) ? value : stack.previous[key];
 					}
 				}
 			}

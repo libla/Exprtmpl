@@ -1,13 +1,13 @@
 ﻿grammar Exprtmpl;
 
 control:
-	include|end|forloop1|forloop2|forrange|if|elseif|else
+	include|end|forloop1|forloop2|forrange|if|elseif|else EOF
 	;
 content:
-	.*? (expr .*?)*
+	.*? (expr .*?)* EOF
 	;
 include:
-	K_INCLUDE FILENAME ('with' value)?
+	INCLUDE ('with' value)?
 	;
 end:
 	K_END
@@ -19,19 +19,19 @@ forloop2:
 	K_FOR NAME ',' NAME K_IN value
 	;
 forrange:
-	K_FOR NAME '=' value ',' value (',' value)?
+	K_FOR NAME '=' numeric ',' numeric (',' numeric)?
 	;
 if:
-	K_IF value
+	K_IF boolean
 	;
 elseif:
-	K_ELSEIF value
+	K_ELSEIF boolean
 	;
 else:
 	K_ELSE
 	;
 expr:
-	'={' value '}'
+	':{' value '}'
 	;
 value:
 	member|K_NULL|concat|or|numeric|array|table|call
@@ -105,6 +105,9 @@ NOT:
 NEGATE:
 	'-'
 	;
+INCLUDE:
+	K_INCLUDE BLANK ('a'..'z'|'A'..'Z'|'_'|'-'|'0'..'9')+('.' ('a'..'z'|'A'..'Z'|'_'|'-'|'0'..'9')+)*
+	;
 K_INCLUDE:
 	'import'
 	;
@@ -146,9 +149,6 @@ NUMBER:
 	;
 STRING:
 	'"' (ESCAPE|~('\\'|'"'))* '"'|'\'' (ESCAPE|~('\\'|'\''))* '\''
-	;
-FILENAME:
-	('a'..'z'|'A'..'Z'|'_'|'-'|'0'..'9')+('.' ('a'..'z'|'A'..'Z'|'_'|'-'|'0'..'9')+)*
 	;
 
 fragment INTEGER:

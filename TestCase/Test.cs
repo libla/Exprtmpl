@@ -2,27 +2,56 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Exprtmpl;
+using Array = Exprtmpl.Array;
 
 public static class ExprtmplTest
 {
-	[Test]
-	public static async Task Test()
-	{
-		string str = @"
-12345 ={test}678
-# for i = 1, 3
- # if i % 2 != 0
-={i + 1}
- # end
-# end
-# for k, v in {name:'libla', age:test}
-={k} ={v}
-# end
+	private const string template = @"
+<html>
+	<head><title>test</title></head>
+	<body>
+		<ul>
+		#for row in rows
+			#if row.Print
+			#import test with {title:row.Message..' libla'}
+			<li>ID::{row.ID}, Message::{row.Message}</li>
+			#end
+		#end
+		</ul>
+	</body>
+</html>
 ";
-		Func<Table, string> func = await str.Compile();
-		Dictionary<string, Value> values = new Dictionary<string, Value> {
-			{"test", "libla"},
-		};
-		Console.WriteLine(func(Table.From(values)));
+	private const string include = @"
+			test :{title}
+";
+	private static readonly Dictionary<string, string> files = new Dictionary<string, string> {
+		{"start", template},
+		{"test", include},
+	};
+	private static Func<Table, string> compile;
+	private static Table table;
+
+	[PreTest]
+	public static async Task Prepare()
+	{
+		compile = await files.Compile("start");
+		List<Value> rows = new List<Value>();
+		for (int i = 0; i < 100; i++)
+		{
+			rows.Add(Table.From(new Dictionary<string, Value> {
+				{"ID", i},
+				{"Message", string.Format("message {0}", i)},
+				{"Print", (i & 1) == 0},
+			}));
+		}
+		table = Table.From(new Dictionary<string, Value> {
+			{"rows", Array.From(rows)},
+		});
+	}
+
+	[Test]
+	public static void Test()
+	{
+		Console.WriteLine(compile(table));
 	}
 }
