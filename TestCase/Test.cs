@@ -12,13 +12,9 @@ public static class ExprtmplTest
 	<body>
 		<ul>
 		#for row in rows
-			#if row.ID % 2 == 0
-			#import test with {title:row.Message..' import'}
+			#if row.Print
 			<li>ID::{row.ID}, Message::{row.Message}</li>
 			#end
-		#end
-		#for key, value in rows[20]
-			:{key} :{value}
 		#end
 		</ul>
 	</body>
@@ -34,27 +30,116 @@ public static class ExprtmplTest
 	private static Func<Table, string> compile;
 	private static Table table;
 
-	[PreTest]
+	[PreTest("Exprtmpl")]
 	public static async Task Prepare()
 	{
 		compile = await files.Compile("start");
-		List<Value> rows = new List<Value>();
+		List<object> rows = new List<object>();
 		for (int i = 0; i < 100; i++)
 		{
-			rows.Add(Table.From(new Dictionary<string, Value> {
+			rows.Add(new {
+				ID = i,
+				Message = string.Format("message {0}", i),
+				Print = i % 2 == 0,
+			});
+		}
+		table = Table.From(new {rows = Array.From(rows), title = "libla"});
+	}
+
+	[Test("Exprtmpl")]
+	public static void Test()
+	{
+		var result = compile(table);
+		//Console.WriteLine(result);
+	}
+}
+
+public static class DotLiquidTest
+{
+	private const string template = @"
+<html>
+	<head><title>test</title></head>
+	<body>
+		<ul>
+		{% for row in rows -%}
+			{% if row.Print -%}
+			<li>ID:{{ row.ID }}, Message:{{ row.Message }}</li>
+			{% endif -%}
+		{% endfor -%}
+		</ul>
+	</body>
+</html>
+";
+	private static DotLiquid.Template compile;
+	private static DotLiquid.Hash hash;
+
+	[PreTest("DotLiquid")]
+	public static void Prepare()
+	{
+		compile = DotLiquid.Template.Parse(template);
+		List<object> rows = new List<object>();
+		for (int i = 0; i < 100; i++)
+		{
+			rows.Add(new Dictionary<string, object> {
 				{"ID", i},
 				{"Message", string.Format("message {0}", i)},
-			}));
+				{"Print", i % 2 == 0},
+			});
 		}
-		table = Table.From(new Dictionary<string, Value> {
-			{"rows", Array.From(rows)},
-			{"title", "libla"}
+		hash = DotLiquid.Hash.FromDictionary(new Dictionary<string, object> {
+			{"rows", rows}
 		});
 	}
 
-	[Test]
+	[Test("DotLiquid")]
 	public static void Test()
 	{
-		Console.WriteLine(compile(table));
+		var result = compile.Render(hash);
+		//Console.WriteLine(result);
+	}
+}
+
+public static class ScribanTest
+{
+	private const string template = @"
+<html>
+	<head><title>test</title></head>
+	<body>
+		<ul>
+		{% for row in rows -%}
+			{% if row.Print -%}
+			<li>ID:{{ row.ID }}, Message:{{ row.Message }}</li>
+			{% endif -%}
+		{% endfor -%}
+		</ul>
+	</body>
+</html>
+";
+	private static Scriban.Template compile;
+	private static Dictionary<string, object> hash;
+
+	[PreTest("Scriban")]
+	public static void Prepare()
+	{
+		compile = Scriban.Template.ParseLiquid(template);
+		List<object> rows = new List<object>();
+		for (int i = 0; i < 100; i++)
+		{
+			rows.Add(new Dictionary<string, object> {
+				{"ID", i},
+				{"Message", string.Format("message {0}", i)},
+				{"Print", i % 2 == 0},
+			});
+		}
+		hash = new Dictionary<string, object> {
+			{"rows", rows}
+		};
+	}
+
+	[Test("Scriban")]
+	public static void Test()
+	{
+		var result = compile.Render(hash);
+		//Console.WriteLine(result);
 	}
 }

@@ -480,20 +480,7 @@ namespace Exprtmpl
 
 		private static void Output(StringBuilder builder, Value text)
 		{
-			switch (text.Type)
-			{
-			case ValueType.Boolean:
-				builder.Append((bool)text ? "true" : "false");
-				break;
-			case ValueType.Number:
-				builder.Append((double)text);
-				break;
-			case ValueType.String:
-				builder.Append((string)text);
-				break;
-			default:
-				throw new InvalidCastException();
-			}
+			builder.Append(text.ToString());
 		}
 
 		private static bool ConditionTest(Value value)
@@ -1061,15 +1048,21 @@ namespace Exprtmpl
 				if (call != null)
 				{
 					string name = string.Join(".", call.NAME().Select(item => item.GetText()));
+					Func<Value[], Value> method;
 					for (int i = 0; i < Compiler.methods.Length; i++)
 					{
-						Func<Value[], Value> method;
 						if (Compiler.methods[i].TryGetValue(name, out method))
 						{
 							return Expression.Call(CallMethodInvoke, Expression.Constant(method),
 													Expression.NewArrayInit(
 														typeof(Value), call.value().Select(CompileValue)));
 						}
+					}
+					if (Builtin.Methods.TryGetValue(name, out method))
+					{
+						return Expression.Call(CallMethodInvoke, Expression.Constant(method),
+												Expression.NewArrayInit(
+													typeof(Value), call.value().Select(CompileValue)));
 					}
 					throw new MissingMethodException("Compiler", name);
 				}

@@ -44,12 +44,20 @@
     <Reference Include="Microsoft.CSharp" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Builtin\Array.cs" />
+    <Compile Include="Builtin\Base.cs" />
+    <Compile Include="Builtin\Builtin.cs" />
+    <Compile Include="Builtin\Date.cs" />
+    <Compile Include="Builtin\Math.cs" />
+    <Compile Include="Builtin\Regex.cs" />
+    <Compile Include="Builtin\String.cs" />
     <Compile Include="Compiler.cs" />
     <Compile Include="Engine.cs" />
-    <Compile Include="Entity.cs" />
     <Compile Include="Exception.cs" />
     <Compile Include="Extension.cs" />
     <Compile Include="Interface.cs" />
+    <Compile Include="Reflect\CastTable.cs" />
+    <Compile Include="Reflect\CastValue.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

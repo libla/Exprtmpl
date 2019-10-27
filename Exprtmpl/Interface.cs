@@ -1,7 +1,10 @@
 ﻿using System;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Threading.Tasks;
+using System.Linq;
+using System.Linq.Expressions;
+using System.Reflection;
 
 namespace Exprtmpl
 {
@@ -35,6 +38,11 @@ namespace Exprtmpl
 			return Equals(obj as Table);
 		}
 
+		public sealed override string ToString()
+		{
+			throw new NotImplementedException();
+		}
+
 		public static bool operator == (Table left, Table right)
 		{
 			if (left == null)
@@ -47,44 +55,35 @@ namespace Exprtmpl
 			return !(left == right);
 		}
 
-		public static Table From(IReadOnlyDictionary<string, Value> values)
+		public static Table From<T>(T value)
 		{
-			return new DictionaryTable(values);
+			return value.GetType() == typeof(T) ? CastTable<T>.Convert(value) : From((object)value);
 		}
 
-		public static Table From(object o)
+		public static Table From(object value)
 		{
-			return o == null ? null : Entity.Create(o);
+			Func<object, Table> creator = creators.GetOrAdd(value.GetType(), factory);
+			return creator(value);
 		}
 
-		private class DictionaryTable : Table
+		private static readonly ConcurrentDictionary<Type, Func<object, Table>> creators =
+			new ConcurrentDictionary<Type, Func<object, Table>>();
+		private static readonly Func<Type, Func<object, Table>> factory;
+
+		static Table()
 		{
-			private readonly IReadOnlyDictionary<string, Value> values;
-
-			public DictionaryTable(IReadOnlyDictionary<string, Value> values)
+			factory = type =>
 			{
-				this.values = values;
-			}
+				return typeof(Table)
+					.GetMethod("GetCreator", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
+					.MakeGenericMethod(type)
+					.Invoke(null, null) as Func<object, Table>;
+			};
+		}
 
-			public override IEnumerable<string> Keys()
-			{
-				return values.Keys;
-			}
-
-			public override Value this[string key]
-			{
-				get
-				{
-					Value value;
-					return values.TryGetValue(key, out value) ? value : null;
-				}
-			}
-
-			public override bool Equals(Table other)
-			{
-				DictionaryTable rhs = other as DictionaryTable;
-				return rhs != null && ReferenceEquals(values, rhs.values);
-			}
+		private static Func<object, Table> GetCreator<T>()
+		{
+			return value => CastTable<T>.Convert((T)value);
 		}
 	}
 
@@ -92,6 +91,21 @@ namespace Exprtmpl
 	public abstract class Array : IEnumerable<Value>, IEquatable<Array>
 #pragma warning restore 659,660,661
 	{
+		private static readonly MethodInfo from;
+
+		static Array()
+		{
+			foreach (MethodInfo method in typeof(Array).GetMethods(
+				BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
+			{
+				if (method.Name == "From" && method.IsGenericMethodDefinition)
+				{
+					from = method;
+					break;
+				}
+			}
+		}
+
 		public abstract int Count { get; }
 		public abstract Value this[int index] { get; }
 
@@ -118,6 +132,11 @@ namespace Exprtmpl
 			return Equals(obj as Array);
 		}
 
+		public sealed override string ToString()
+		{
+			throw new NotImplementedException();
+		}
+
 		public static bool operator == (Array left, Array right)
 		{
 			if (left == null)
@@ -135,19 +154,9 @@ namespace Exprtmpl
 			return new ListArray(values);
 		}
 
-		public static Array From(IReadOnlyList<IReadOnlyDictionary<string, Value>> values)
+		public static Array From<T>(IReadOnlyList<T> values)
 		{
-			return new ListDictionaryArray(values);
-		}
-
-		public static Array From<T>(IReadOnlyList<T> values) where T : ITable
-		{
-			return new ListTableArray<T>(values);
-		}
-
-		public static Array From(IReadOnlyList<object> values)
-		{
-			return new ListObjectArray(values);
+			return new ListArray<T>(values);
 		}
 
 		private class ListArray : Array
@@ -181,50 +190,90 @@ namespace Exprtmpl
 			}
 		}
 
-		private class ListDictionaryArray : Array
+		private class ListArray<T> : Array
 		{
-			private readonly IReadOnlyList<IReadOnlyDictionary<string, Value>> values;
-			private readonly Dictionary<int, Value> caches = new Dictionary<int, Value>();
+			private static readonly Func<IReadOnlyList<T>, int, Value> getValue;
 
-			public ListDictionaryArray(IReadOnlyList<IReadOnlyDictionary<string, Value>> values)
+			static ListArray()
 			{
-				this.values = values;
-			}
-
-			public override int Count
-			{
-				get { return values.Count; }
-			}
-
-			public override Value this[int index]
-			{
-				get
+				switch (Type.GetTypeCode(typeof(T)))
 				{
-					if (index < 0 || index >= values.Count)
-						return null;
-					Value value;
-					if (!caches.TryGetValue(index, out value))
+				case TypeCode.Boolean:
+					getValue = (list, index) => ((IReadOnlyList<bool>)list)[index];
+					break;
+				case TypeCode.Char:
+					getValue = (list, index) => new string(((IReadOnlyList<char>)list)[index], 1);
+					break;
+				case TypeCode.SByte:
+					getValue = (list, index) => ((IReadOnlyList<sbyte>)list)[index];
+					break;
+				case TypeCode.Byte:
+					getValue = (list, index) => ((IReadOnlyList<byte>)list)[index];
+					break;
+				case TypeCode.Int16:
+					getValue = (list, index) => ((IReadOnlyList<short>)list)[index];
+					break;
+				case TypeCode.UInt16:
+					getValue = (list, index) => ((IReadOnlyList<ushort>)list)[index];
+					break;
+				case TypeCode.Int32:
+					getValue = (list, index) => ((IReadOnlyList<int>)list)[index];
+					break;
+				case TypeCode.UInt32:
+					getValue = (list, index) => ((IReadOnlyList<uint>)list)[index];
+					break;
+				case TypeCode.Int64:
+					getValue = (list, index) => ((IReadOnlyList<long>)list)[index];
+					break;
+				case TypeCode.UInt64:
+					getValue = (list, index) => ((IReadOnlyList<ulong>)list)[index];
+					break;
+				case TypeCode.Single:
+					getValue = (list, index) => ((IReadOnlyList<float>)list)[index];
+					break;
+				case TypeCode.Double:
+					getValue = (list, index) => ((IReadOnlyList<double>)list)[index];
+					break;
+				case TypeCode.Decimal:
+					getValue = (list, index) => (double)((IReadOnlyList<decimal>)list)[index];
+					break;
+				case TypeCode.String:
+					getValue = (list, index) => ((IReadOnlyList<string>)list)[index];
+					break;
+				default:
+					Type result = typeof(T).GetInterfaces()
+										.FirstOrDefault(t => t.IsGenericType &&
+															t.GetGenericTypeDefinition() == typeof(IReadOnlyList<>));
+					if (result == null)
 					{
-						value = Table.From(values[index]);
-						caches.Add(index, value);
+						getValue = (list, index) => Table.From(list[index]);
 					}
-					return value;
+					else
+					{
+						Type arg = result.GetGenericArguments()[0];
+						if (arg == typeof(Value) || arg.IsSubclassOf(typeof(Value)))
+						{
+							getValue = (list, index) => From((IReadOnlyList<Value>)list[index]);
+						}
+						else
+						{
+							var parameter = Expression.Parameter(typeof(T));
+							var convert = Expression
+								.Lambda<Func<T, Value>>(
+										Expression.Convert(Expression.Call(from.MakeGenericMethod(arg), parameter),
+															typeof(Value)), parameter)
+								.Compile();
+							getValue = (list, index) => convert(list[index]);
+						}
+					}
+					break;
 				}
 			}
 
-			public override bool Equals(Array other)
-			{
-				ListDictionaryArray rhs = other as ListDictionaryArray;
-				return rhs != null && ReferenceEquals(values, rhs.values);
-			}
-		}
-
-		private class ListTableArray<T> : Array where T : ITable
-		{
 			private readonly IReadOnlyList<T> values;
 			private readonly Dictionary<int, Value> caches = new Dictionary<int, Value>();
 
-			public ListTableArray(IReadOnlyList<T> values)
+			public ListArray(IReadOnlyList<T> values)
 			{
 				this.values = values;
 			}
@@ -238,12 +287,10 @@ namespace Exprtmpl
 			{
 				get
 				{
-					if (index < 0 || index >= values.Count)
-						return null;
 					Value value;
 					if (!caches.TryGetValue(index, out value))
 					{
-						value = values[index].ToTable();
+						value = getValue(values, index);
 						caches.Add(index, value);
 					}
 					return value;
@@ -252,45 +299,7 @@ namespace Exprtmpl
 
 			public override bool Equals(Array other)
 			{
-				ListTableArray<T> rhs = other as ListTableArray<T>;
-				return rhs != null && ReferenceEquals(values, rhs.values);
-			}
-		}
-
-		private class ListObjectArray : Array
-		{
-			private readonly IReadOnlyList<object> values;
-			private readonly Dictionary<int, Value> caches = new Dictionary<int, Value>();
-
-			public ListObjectArray(IReadOnlyList<object> values)
-			{
-				this.values = values;
-			}
-
-			public override int Count
-			{
-				get { return values.Count; }
-			}
-
-			public override Value this[int index]
-			{
-				get
-				{
-					if (index < 0 || index >= values.Count)
-						return null;
-					Value value;
-					if (!caches.TryGetValue(index, out value))
-					{
-						value = Table.From(values[index]);
-						caches.Add(index, value);
-					}
-					return value;
-				}
-			}
-
-			public override bool Equals(Array other)
-			{
-				ListObjectArray rhs = other as ListObjectArray;
+				ListArray<T> rhs = other as ListArray<T>;
 				return rhs != null && ReferenceEquals(values, rhs.values);
 			}
 		}
@@ -301,6 +310,11 @@ namespace Exprtmpl
 		internal Value() { }
 
 		public abstract ValueType Type { get; }
+
+		public override string ToString()
+		{
+			throw new NotImplementedException();
+		}
 
 		public static explicit operator bool(Value value)
 		{
@@ -403,6 +417,11 @@ namespace Exprtmpl
 				get { return ValueType.Boolean; }
 			}
 
+			public override string ToString()
+			{
+				return value ? "true" : "false";
+			}
+
 			protected override bool CastToBoolean()
 			{
 				return value;
@@ -421,6 +440,11 @@ namespace Exprtmpl
 			public override ValueType Type
 			{
 				get { return ValueType.Number; }
+			}
+
+			public override string ToString()
+			{
+				return value.ToString("G17");
 			}
 
 			protected override double CastToNumber()
@@ -443,6 +467,11 @@ namespace Exprtmpl
 				get { return ValueType.String; }
 			}
 
+			public override string ToString()
+			{
+				return value;
+			}
+
 			protected override string CastToString()
 			{
 				return value;
@@ -461,6 +490,11 @@ namespace Exprtmpl
 			public override ValueType Type
 			{
 				get { return ValueType.Table; }
+			}
+
+			public override string ToString()
+			{
+				return value.ToString();
 			}
 
 			protected override Table CastToTable()
@@ -483,6 +517,11 @@ namespace Exprtmpl
 				get { return ValueType.Array; }
 			}
 
+			public override string ToString()
+			{
+				return value.ToString();
+			}
+
 			protected override Array CastToArray()
 			{
 				return value;
@@ -497,11 +536,5 @@ namespace Exprtmpl
 		String,
 		Table,
 		Array,
-	}
-
-	public interface ITable
-	{
-		IEnumerable<string> Keys();
-		Value this[string key] { get; }
 	}
 }
