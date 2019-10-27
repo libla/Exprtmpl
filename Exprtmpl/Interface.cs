@@ -47,16 +47,21 @@ namespace Exprtmpl
 			return !(left == right);
 		}
 
-		public static Table From(IDictionary<string, Value> values)
+		public static Table From(IReadOnlyDictionary<string, Value> values)
 		{
 			return new DictionaryTable(values);
 		}
 
+		public static Table From(object o)
+		{
+			return o == null ? null : Entity.Create(o);
+		}
+
 		private class DictionaryTable : Table
 		{
-			private readonly IDictionary<string, Value> values;
+			private readonly IReadOnlyDictionary<string, Value> values;
 
-			public DictionaryTable(IDictionary<string, Value> values)
+			public DictionaryTable(IReadOnlyDictionary<string, Value> values)
 			{
 				this.values = values;
 			}
@@ -125,16 +130,31 @@ namespace Exprtmpl
 			return !(left == right);
 		}
 
-		public static Array From(IList<Value> values)
+		public static Array From(IReadOnlyList<Value> values)
 		{
 			return new ListArray(values);
 		}
 
+		public static Array From(IReadOnlyList<IReadOnlyDictionary<string, Value>> values)
+		{
+			return new ListDictionaryArray(values);
+		}
+
+		public static Array From<T>(IReadOnlyList<T> values) where T : ITable
+		{
+			return new ListTableArray<T>(values);
+		}
+
+		public static Array From(IReadOnlyList<object> values)
+		{
+			return new ListObjectArray(values);
+		}
+
 		private class ListArray : Array
 		{
-			private readonly IList<Value> values;
+			private readonly IReadOnlyList<Value> values;
 
-			public ListArray(IList<Value> values)
+			public ListArray(IReadOnlyList<Value> values)
 			{
 				this.values = values;
 			}
@@ -157,6 +177,120 @@ namespace Exprtmpl
 			public override bool Equals(Array other)
 			{
 				ListArray rhs = other as ListArray;
+				return rhs != null && ReferenceEquals(values, rhs.values);
+			}
+		}
+
+		private class ListDictionaryArray : Array
+		{
+			private readonly IReadOnlyList<IReadOnlyDictionary<string, Value>> values;
+			private readonly Dictionary<int, Value> caches = new Dictionary<int, Value>();
+
+			public ListDictionaryArray(IReadOnlyList<IReadOnlyDictionary<string, Value>> values)
+			{
+				this.values = values;
+			}
+
+			public override int Count
+			{
+				get { return values.Count; }
+			}
+
+			public override Value this[int index]
+			{
+				get
+				{
+					if (index < 0 || index >= values.Count)
+						return null;
+					Value value;
+					if (!caches.TryGetValue(index, out value))
+					{
+						value = Table.From(values[index]);
+						caches.Add(index, value);
+					}
+					return value;
+				}
+			}
+
+			public override bool Equals(Array other)
+			{
+				ListDictionaryArray rhs = other as ListDictionaryArray;
+				return rhs != null && ReferenceEquals(values, rhs.values);
+			}
+		}
+
+		private class ListTableArray<T> : Array where T : ITable
+		{
+			private readonly IReadOnlyList<T> values;
+			private readonly Dictionary<int, Value> caches = new Dictionary<int, Value>();
+
+			public ListTableArray(IReadOnlyList<T> values)
+			{
+				this.values = values;
+			}
+
+			public override int Count
+			{
+				get { return values.Count; }
+			}
+
+			public override Value this[int index]
+			{
+				get
+				{
+					if (index < 0 || index >= values.Count)
+						return null;
+					Value value;
+					if (!caches.TryGetValue(index, out value))
+					{
+						value = values[index].ToTable();
+						caches.Add(index, value);
+					}
+					return value;
+				}
+			}
+
+			public override bool Equals(Array other)
+			{
+				ListTableArray<T> rhs = other as ListTableArray<T>;
+				return rhs != null && ReferenceEquals(values, rhs.values);
+			}
+		}
+
+		private class ListObjectArray : Array
+		{
+			private readonly IReadOnlyList<object> values;
+			private readonly Dictionary<int, Value> caches = new Dictionary<int, Value>();
+
+			public ListObjectArray(IReadOnlyList<object> values)
+			{
+				this.values = values;
+			}
+
+			public override int Count
+			{
+				get { return values.Count; }
+			}
+
+			public override Value this[int index]
+			{
+				get
+				{
+					if (index < 0 || index >= values.Count)
+						return null;
+					Value value;
+					if (!caches.TryGetValue(index, out value))
+					{
+						value = Table.From(values[index]);
+						caches.Add(index, value);
+					}
+					return value;
+				}
+			}
+
+			public override bool Equals(Array other)
+			{
+				ListObjectArray rhs = other as ListObjectArray;
 				return rhs != null && ReferenceEquals(values, rhs.values);
 			}
 		}
@@ -356,12 +490,6 @@ namespace Exprtmpl
 		}
 	}
 
-	public interface ILoader
-	{
-		Task<string> Load(string file);
-		Task<string> Load(string file, string old);
-	}
-
 	public enum ValueType
 	{
 		Boolean,
@@ -369,5 +497,11 @@ namespace Exprtmpl
 		String,
 		Table,
 		Array,
+	}
+
+	public interface ITable
+	{
+		IEnumerable<string> Keys();
+		Value this[string key] { get; }
 	}
 }

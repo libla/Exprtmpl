@@ -1060,7 +1060,7 @@ namespace Exprtmpl
 				ExprtmplParser.CallContext call = context.call();
 				if (call != null)
 				{
-					string name = call.NAME().GetText();
+					string name = string.Join(".", call.NAME().Select(item => item.GetText()));
 					for (int i = 0; i < Compiler.methods.Length; i++)
 					{
 						Func<Value[], Value> method;

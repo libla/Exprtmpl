@@ -85,7 +85,7 @@ table:
 	'{' (NAME ':' value)? (',' NAME ':' value)* ','? '}'
 	;
 call:
-	NAME '(' value? (',' value)* ')'
+	NAME ('.' NAME)* '(' value? (',' value)* ')'
 	;
 NEWLINE:
 	('\r\n'|'\n'|'\r'|'\f')+
