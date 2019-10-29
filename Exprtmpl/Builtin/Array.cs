@@ -64,61 +64,37 @@ namespace Exprtmpl
 			return Array.From(results);
 		}
 
-		[Builtin("map")]
-		public static Value Map(Value[] values)
+		[Builtin("reverse")]
+		public static Value Reverse(Value[] values)
+		{
+			if (values.Length != 1)
+				throw new InvalidOperationException();
+			Array array = (Array)values[0];
+			Value[] results = new Value[array.Count];
+			for (int i = 0; i < results.Length; i++)
+				results[results.Length - i - 1] = array[i];
+			return Array.From(results);
+		}
+
+		[Builtin("page")]
+		public static Value Page(Value[] values)
 		{
 			if (values.Length != 2)
 				throw new InvalidOperationException();
 			Array array = (Array)values[0];
-			if (values[1] != null)
+			int limit = (int)values[1];
+			int total = array.Count;
+			Value[] results = new Value[(total + limit - 1) / limit];
+			for (int i = 0; i < results.Length; i++)
 			{
-				Value[] results = new Value[array.Count];
-				switch (values[1].Type)
-				{
-				case ValueType.Number:
-					int index = (int)values[1];
-					for (int i = 0; i < results.Length; i++)
-						results[i] = ((Array)array[i])[index];
-					return Array.From(results);
-				case ValueType.String:
-					string member = (string)values[1];
-					for (int i = 0; i < results.Length; i++)
-						results[i] = ((Table)array[i])[member];
-					return Array.From(results);
-				}
+				int start = i * limit;
+				int count = Math.Min(limit, total - start);
+				Value[] page = new Value[count];
+				for (int j = 0; j < count; j++)
+					page[j] = array[start + j];
+				results[i] = Array.From(page);
 			}
-			throw new ArgumentOutOfRangeException();
-		}
-
-		[Builtin("sort")]
-		public static Value Sort(Value[] values)
-		{
-			if (values.Length != 1 && values.Length != 2)
-				throw new InvalidOperationException();
-			Array array = (Array)values[0];
-			List<Value> results = new List<Value>(array.Count);
-			for (int i = 0, j = array.Count; i < j; i++)
-				results.Add(array[i]);
-			if (values.Length == 1)
-			{
-				results.Sort(Compare);
-				return Array.From(results);
-			}
-			if (values[1] != null)
-			{
-				switch (values[1].Type)
-				{
-				case ValueType.Number:
-					int index = (int)values[1];
-					results.Sort((left, right) => Compare(((Array)left)[index], ((Array)right)[index]));
-					return Array.From(results);
-				case ValueType.String:
-					string member = (string)values[1];
-					results.Sort((left, right) => Compare(((Table)left)[member], ((Table)right)[member]));
-					return Array.From(results);
-				}
-			}
-			throw new ArgumentOutOfRangeException();
+			return Array.From(results);
 		}
 
 		[Builtin("unique")]
@@ -199,6 +175,63 @@ namespace Exprtmpl
 					return true;
 			}
 			return false;
+		}
+
+		[Builtin("map")]
+		public static Value Map(Value[] values)
+		{
+			if (values.Length != 2)
+				throw new InvalidOperationException();
+			Array array = (Array)values[0];
+			if (values[1] != null)
+			{
+				Value[] results = new Value[array.Count];
+				switch (values[1].Type)
+				{
+				case ValueType.Number:
+					int index = (int)values[1];
+					for (int i = 0; i < results.Length; i++)
+						results[i] = ((Array)array[i])[index];
+					return Array.From(results);
+				case ValueType.String:
+					string member = (string)values[1];
+					for (int i = 0; i < results.Length; i++)
+						results[i] = ((Table)array[i])[member];
+					return Array.From(results);
+				}
+			}
+			throw new ArgumentOutOfRangeException();
+		}
+
+		[Builtin("sort")]
+		public static Value Sort(Value[] values)
+		{
+			if (values.Length != 1 && values.Length != 2)
+				throw new InvalidOperationException();
+			Array array = (Array)values[0];
+			List<Value> results = new List<Value>(array.Count);
+			for (int i = 0, j = array.Count; i < j; i++)
+				results.Add(array[i]);
+			if (values.Length == 1)
+			{
+				results.Sort(Compare);
+				return Array.From(results);
+			}
+			if (values[1] != null)
+			{
+				switch (values[1].Type)
+				{
+				case ValueType.Number:
+					int index = (int)values[1];
+					results.Sort((left, right) => Compare(((Array)left)[index], ((Array)right)[index]));
+					return Array.From(results);
+				case ValueType.String:
+					string member = (string)values[1];
+					results.Sort((left, right) => Compare(((Table)left)[member], ((Table)right)[member]));
+					return Array.From(results);
+				}
+			}
+			throw new ArgumentOutOfRangeException();
 		}
 
 		private static int Compare(Value left, Value right)
