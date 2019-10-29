@@ -28,7 +28,8 @@ namespace Exprtmpl
 		{
 			if (values.Length != 2)
 				throw new InvalidOperationException();
-			return Regex.Replace((string)values[0], (string)values[1], "", RegexOptions.Singleline);
+			return Regex.Replace((string)values[0], (string)values[1], "",
+								RegexOptions.Singleline | RegexOptions.ExplicitCapture);
 		}
 
 		[Builtin("replace")]
@@ -36,7 +37,8 @@ namespace Exprtmpl
 		{
 			if (values.Length != 3)
 				throw new InvalidOperationException();
-			return Regex.Replace((string)values[0], (string)values[1], (string)values[2], RegexOptions.Singleline);
+			return Regex.Replace((string)values[0], (string)values[1], (string)values[2],
+								RegexOptions.Singleline | RegexOptions.ExplicitCapture);
 		}
 
 		[Builtin("split")]
@@ -44,7 +46,8 @@ namespace Exprtmpl
 		{
 			if (values.Length != 2)
 				throw new InvalidOperationException();
-			string[] split = Regex.Split((string)values[0], (string)values[1], RegexOptions.Singleline);
+			string[] split = Regex.Split((string)values[0], (string)values[1],
+										RegexOptions.Singleline | RegexOptions.ExplicitCapture);
 			Value[] result = new Value[split.Length];
 			for (int i = 0; i < split.Length; i++)
 				result[i] = split[i];

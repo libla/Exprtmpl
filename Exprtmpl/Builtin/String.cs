@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 
 namespace Exprtmpl
@@ -136,6 +137,31 @@ namespace Exprtmpl
 			for (int i = 0; i < split.Length; i++)
 				result[i] = split[i];
 			return Array.From(result);
+		}
+
+		private static readonly Regex word = new Regex("\\w+", RegexOptions.Compiled);
+
+		[Builtin("capitalize")]
+		public static Value Capitalize(Value[] values)
+		{
+			if (values.Length == 1)
+				return word.Replace((string)values[0], Capitalize);
+			if (values.Length == 2)
+				return Regex.Replace((string)values[0], (string)values[1], Capitalize,
+									RegexOptions.Singleline | RegexOptions.ExplicitCapture);
+			throw new InvalidOperationException();
+		}
+
+		private static string Capitalize(Match match)
+		{
+			string value = match.Value;
+			if (value.Length == 0)
+				return value;
+			StringBuilder builder = localbuilder.Value;
+			builder.Clear();
+			builder.Append(char.ToUpperInvariant(value[0]));
+			builder.Append(value, 1, value.Length - 1);
+			return builder.ToString();
 		}
 
 		[Builtin("left")]
