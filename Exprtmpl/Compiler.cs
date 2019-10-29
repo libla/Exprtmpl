@@ -131,7 +131,8 @@ namespace Exprtmpl
 		private void ParseContent(string file, int offset, string str)
 		{
 			AntlrInputStream stream = new AntlrInputStream(str);
-			ITokenSource lexer = new ExprtmplLexer(stream);
+			ExprtmplLexer lexer = new ExprtmplLexer(stream);
+			lexer.Mode(ExprtmplLexer.Content);
 			ITokenStream tokens = new CommonTokenStream(lexer);
 			ExprtmplParser parser = new ExprtmplParser(tokens) {BuildParseTree = true, ErrorHandler = new ErrorStrategy(offset)};
 			ExprtmplParser.ContentContext context = parser.content();
@@ -144,7 +145,8 @@ namespace Exprtmpl
 		private Task ParseControl(string file, int offset, string str)
 		{
 			AntlrInputStream stream = new AntlrInputStream(str);
-			ITokenSource lexer = new ExprtmplLexer(stream);
+			ExprtmplLexer lexer = new ExprtmplLexer(stream);
+			lexer.Mode(ExprtmplLexer.DefaultMode);
 			ITokenStream tokens = new CommonTokenStream(lexer);
 			ExprtmplParser parser = new ExprtmplParser(tokens) {BuildParseTree = true, ErrorHandler = new ErrorStrategy(offset)};
 			ExprtmplParser.ControlContext context = parser.control();
@@ -153,7 +155,7 @@ namespace Exprtmpl
 			return listener.Task;
 		}
 
-		private class ContentListener : ExprtmplBaseListener
+		private class ContentListener : ExprtmplParserBaseListener
 		{
 			private readonly Compiler compiler;
 			private readonly string file;
@@ -168,17 +170,16 @@ namespace Exprtmpl
 				this.offset = offset;
 				this.str = str;
 			}
-
 			public override void EnterExpr(ExprtmplParser.ExprContext context)
 			{
 				if (Index < context.Start.StartIndex)
 					compiler.flow.AddOutput(str.Substring(Index, context.Start.StartIndex - Index));
-				Index = context.Stop.StartIndex + 1;
+				Index = context.Stop.StopIndex + 1;
 				compiler.flow.AddOutput(compiler.flow.CompileValue(context.value()));
 			}
 		}
 
-		private class ControlListener : ExprtmplBaseListener
+		private class ControlListener : ExprtmplParserBaseListener
 		{
 			private static readonly Task completed;
 			private Task task;
@@ -323,6 +324,14 @@ namespace Exprtmpl
 
 			public override void ReportError(Parser recognizer, RecognitionException e)
 			{
+				Console.WriteLine(recognizer.CurrentToken.Text);
+				foreach (var token in e.GetExpectedTokens().ToList())
+				{
+					string name = e.Recognizer.Vocabulary.GetDisplayName(token);
+					if (name == "DONE")
+						name = "'<EOF>'";
+					Console.WriteLine(name);
+				}
 				throw new ParseException(recognizer, e);
 			}
 
@@ -333,6 +342,14 @@ namespace Exprtmpl
 
 			public override IToken RecoverInline(Parser recognizer)
 			{
+				Console.WriteLine(recognizer.CurrentToken.Text);
+				foreach (var token in recognizer.GetExpectedTokens().ToList())
+				{
+					string name = recognizer.Vocabulary.GetDisplayName(token);
+					if (name == "DONE")
+						name = "'<EOF>'";
+					Console.WriteLine(name);
+				}
 				if (recognizer.GetExpectedTokens().Contains(recognizer.CurrentToken.Type))
 					return recognizer.CurrentToken;
 				throw new ParseException(recognizer, new InputMismatchException(recognizer));
@@ -1101,18 +1118,12 @@ namespace Exprtmpl
 				ExprtmplParser.ConcatContext concat = context.concat();
 				if (concat != null)
 					return CompileValue(concat);
-				ExprtmplParser.NumericContext numeric = context.numeric();
-				if (numeric != null)
-					return CompileValue(numeric);
-				return CompileValue(context.member());
+				return CompileValue(context.numeric());
 			}
 
 			public Expression CompileValue(ExprtmplParser.SubindexContext context)
 			{
-				ExprtmplParser.NumericContext numeric = context.numeric();
-				if (numeric != null)
-					return CompileValue(numeric);
-				return CompileValue(context.member());
+				return CompileValue(context.numeric());
 			}
 
 			public Expression CompileValue(ExprtmplParser.ConcatContext context)
@@ -1149,8 +1160,7 @@ namespace Exprtmpl
 
 			public Expression CompileValue(ExprtmplParser.SubstringContext context)
 			{
-				ExprtmplParser.NumericContext numeric = context.numeric();
-				return numeric != null ? CompileValue(numeric) : CompileValue(context.member());
+				return CompileValue(context.numeric());
 			}
 
 			public Expression CompileValue(ExprtmplParser.OrContext context)
@@ -1184,10 +1194,16 @@ namespace Exprtmpl
 					return Expression.Constant((Value)!not, typeof(Value));
 				if (context.K_FALSE() != null)
 					return Expression.Constant((Value)not, typeof(Value));
+				Expression expr;
 				ExprtmplParser.MemberContext member = context.member();
 				if (member != null)
-					return not ? Expression.Call(GetNot, CompileValue(member)) : CompileValue(member);
-				Expression expr;
+				{
+					if (context.K_NULL() == null)
+						return not ? Expression.Call(GetNot, CompileValue(member)) : CompileValue(member);
+					expr = Expression.Call(context.EQ().GetText() == "==" ? GetEqual : GetNotEqual,
+											CompileValue(member), Expression.Constant(null, typeof(Value)));
+					return not ? Expression.Call(GetNot, expr) : expr;
+				}
 				ExprtmplParser.NumericContext[] numbers = context.numeric();
 				if (numbers != null && numbers.Length != 0)
 				{
@@ -1400,6 +1416,7 @@ namespace Exprtmpl
 		{
 			private readonly List<Expression> thenblocks = new List<Expression>();
 			private readonly List<Expression> elseblocks = new List<Expression>();
+			private readonly bool autoend;
 
 			private bool then;
 			private readonly Expression condition;
@@ -1422,15 +1439,15 @@ namespace Exprtmpl
 			public IfControlFlow(Compiler compiler, ControlFlow previous, ExprtmplParser.IfContext context) : base(compiler, previous)
 			{
 				then = true;
-				ExprtmplParser.MemberContext member = context.member();
-				condition = member != null ? CompileValue(member) : CompileValue(context.or());
+				autoend = false;
+				condition = CompileValue(context.or());
 			}
 
 			public IfControlFlow(Compiler compiler, ControlFlow previous, ExprtmplParser.ElseifContext context) : base(compiler, previous)
 			{
 				then = true;
-				ExprtmplParser.MemberContext member = context.member();
-				condition = member != null ? CompileValue(member) : CompileValue(context.or());
+				autoend = true;
+				condition = CompileValue(context.or());
 			}
 
 			public override ControlFlow End(string file, int offset, ExprtmplParser.EndContext context)
@@ -1442,7 +1459,7 @@ namespace Exprtmpl
 										: Expression.IfThenElse(
 											Expression.Call(GetConditionTest, condition),
 											Expression.Block(thenblocks), Expression.Block(elseblocks)));
-				return Previous;
+				return autoend ? Previous.End(file, offset, context) : Previous;
 			}
 
 			public override ControlFlow ElseIf(string file, int offset, ExprtmplParser.ElseifContext context)

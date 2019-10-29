@@ -38,6 +38,10 @@
   <ItemGroup>
     <Reference Include="Antlr4.Runtime, Version=4.6.0.0, Culture=neutral, PublicKeyToken=09abb75b9ed49849, processorArchitecture=MSIL">
       <HintPath>$(SolutionDir)packages\Antlr4.Runtime.4.6.6\lib\net45\Antlr4.Runtime.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Costura, Version=3.3.3.0, Culture=neutral, PublicKeyToken=9919ef960d84173d, processorArchitecture=MSIL">
+      <HintPath>$(SolutionDir)packages\Costura.Fody.3.3.3\lib\net40\Costura.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -62,12 +66,21 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
-    <Antlr4 Include="Exprtmpl.g4">
+    <Antlr4 Include="ExprtmplLexer.g4">
       <Generator>MSBuild:Compile</Generator>
       <CustomToolNamespace>Exprtmpl</CustomToolNamespace>
       <Listener>True</Listener>
       <Visitor>False</Visitor>
     </Antlr4>
+    <Antlr4 Include="ExprtmplParser.g4">
+      <Generator>MSBuild:Compile</Generator>
+      <CustomToolNamespace>Exprtmpl</CustomToolNamespace>
+      <Listener>True</Listener>
+      <Visitor>False</Visitor>
+    </Antlr4>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="FodyWeavers.xml" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
@@ -76,9 +89,13 @@
     </PropertyGroup>
     <Error Condition="!Exists('$(SolutionDir)packages\Antlr4.CodeGenerator.4.6.6\build\Antlr4.CodeGenerator.props')" Text="$([System.String]::Format('$(ErrorText)', '$(SolutionDir)packages\Antlr4.CodeGenerator.4.6.6\build\Antlr4.CodeGenerator.props'))" />
     <Error Condition="!Exists('$(SolutionDir)packages\Antlr4.CodeGenerator.4.6.6\build\Antlr4.CodeGenerator.targets')" Text="$([System.String]::Format('$(ErrorText)', '$(SolutionDir)packages\Antlr4.CodeGenerator.4.6.6\build\Antlr4.CodeGenerator.targets'))" />
+    <Error Condition="!Exists('$(SolutionDir)packages\Fody.4.2.1\build\Fody.targets')" Text="$([System.String]::Format('$(ErrorText)', '$(SolutionDir)packages\Fody.4.2.1\build\Fody.targets'))" />
+    <Error Condition="!Exists('$(SolutionDir)packages\Costura.Fody.3.3.3\build\Costura.Fody.props')" Text="$([System.String]::Format('$(ErrorText)', '$(SolutionDir)packages\Costura.Fody.3.3.3\build\Costura.Fody.props'))" />
   </Target>
   <Import Project="$(SolutionDir)packages\Antlr4.CodeGenerator.4.6.6\build\Antlr4.CodeGenerator.props" Condition="Exists('$(SolutionDir)packages\Antlr4.CodeGenerator.4.6.6\build\Antlr4.CodeGenerator.props')" />
   <Import Project="$(SolutionDir)packages\Antlr4.CodeGenerator.4.6.6\build\Antlr4.CodeGenerator.targets" Condition="Exists('$(SolutionDir)packages\Antlr4.CodeGenerator.4.6.6\build\Antlr4.CodeGenerator.targets')" />
+  <Import Project="$(SolutionDir)packages\Fody.4.2.1\build\Fody.targets" Condition="Exists('$(SolutionDir)packages\Fody.4.2.1\build\Fody.targets')" />
+  <Import Project="$(SolutionDir)packages\Costura.Fody.3.3.3\build\Costura.Fody.props" Condition="Exists('$(SolutionDir)packages\Costura.Fody.3.3.3\build\Costura.Fody.props')" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
   <Target Name="BeforeBuild">

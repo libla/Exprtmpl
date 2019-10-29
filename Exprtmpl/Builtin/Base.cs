@@ -74,5 +74,13 @@ namespace Exprtmpl
 				throw new InvalidOperationException();
 			return values[0].ToString();
 		}
+
+		[Builtin("condition")]
+		public static Value Condition(Value[] values)
+		{
+			if (values.Length != 3)
+				throw new InvalidOperationException();
+			return (bool)values[0] ? values[1] : values[2];
+		}
 	}
 }
