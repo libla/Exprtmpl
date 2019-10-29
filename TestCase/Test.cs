@@ -13,7 +13,7 @@ public static class ExprtmplTest
 		<ul>
 		#for row in rows
 			#if row.Print
-			<li>ID::{row.ID}, Message::{row.Message}</li>
+			<li>ID:={row.ID}, Message:={row.Message}</li>
 			#end
 		#end
 		</ul>

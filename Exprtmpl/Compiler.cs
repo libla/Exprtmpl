@@ -132,7 +132,7 @@ namespace Exprtmpl
 		{
 			AntlrInputStream stream = new AntlrInputStream(str);
 			ExprtmplLexer lexer = new ExprtmplLexer(stream);
-			lexer.Mode(ExprtmplLexer.Content);
+			lexer.PushMode(ExprtmplLexer.Content);
 			ITokenStream tokens = new CommonTokenStream(lexer);
 			ExprtmplParser parser = new ExprtmplParser(tokens) {BuildParseTree = true, ErrorHandler = new ErrorStrategy(offset)};
 			ExprtmplParser.ContentContext context = parser.content();
@@ -146,7 +146,7 @@ namespace Exprtmpl
 		{
 			AntlrInputStream stream = new AntlrInputStream(str);
 			ExprtmplLexer lexer = new ExprtmplLexer(stream);
-			lexer.Mode(ExprtmplLexer.DefaultMode);
+			lexer.PushMode(ExprtmplLexer.DefaultMode);
 			ITokenStream tokens = new CommonTokenStream(lexer);
 			ExprtmplParser parser = new ExprtmplParser(tokens) {BuildParseTree = true, ErrorHandler = new ErrorStrategy(offset)};
 			ExprtmplParser.ControlContext context = parser.control();
